@@ -1,0 +1,11 @@
+{
+  "graphql_endpoint": "https://ecom-api.costco.com/ebusiness/order/v1/orders/graphql",
+  "b2c_tenant": "e0714dd4-784d-46d6-a278-3e29553483eb",
+  "b2c_policy": "B2C_1A_SSO_WCS_signup_signin_201",
+  "b2c_client_id": "a3a5186b-7c89-4b4c-93a8-dd604e930757",
+  "redirect_uri": "https://www.costco.com/myaccount/",
+  "client_identifier": "481b1aec-aa3b-454b-b81b-48187e28f205",
+  "wcs_client_id": "4900eb1f-0c10-4bd9-99c3-c59e6c1ecebf",
+  "token_header_name": "costco-x-authorization",
+  "warehouse_number": "847"
+}

@@ -1,0 +1,36 @@
+# Token cache — contains live session tokens, never commit
+.token_cache.json
+
+# Log file
+costco_lookup.log
+costco_lookup.log.*
+
+# HAR exports — contain live tokens, cookies, and personal data
+*.har
+
+# Temporary helper scripts
+store_creds.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec.bak
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
