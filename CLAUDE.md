@@ -14,15 +14,9 @@ python main.py --item ITEM_NUMBER --output json
 python main.py --item ITEM_NUMBER --output csv
 python main.py --item ITEM_NUMBER --years 10
 
-# First-time setup (warehouse number + credentials via OS keyring)
-python main.py --setup
-
-# Inject a bearer token from Chrome DevTools (main auth workaround)
+# Inject a bearer token from Chrome DevTools (required before first use)
 python main.py --inject-token "eyJ..."
 python main.py --inject-token   # interactive prompt
-
-# Force token refresh
-python main.py --refresh-token
 
 # Verbose logging to terminal
 python main.py --item ITEM_NUMBER --debug
@@ -41,22 +35,13 @@ This is a Python CLI that searches Costco order history (both online orders and 
 
 ### Authentication
 
-Costco uses Azure AD B2C with PKCE, hosted at `signin.costco.com`. The automated login flow in `auth.py` mimics a browser:
-1. GET `/oauth2/v2.0/authorize` — gets CSRF cookie and B2C transaction ID
-2. POST `/SelfAsserted` — submits email + password
-3. GET `/api/CombinedSigninAndSignup/confirmed` — follows redirect chain to capture auth code
-4. POST `/oauth2/v2.0/token` — exchanges code for `id_token` + `refresh_token`
+Authentication is done exclusively via `--inject-token`: the user copies the `costco-x-authorization` Bearer token from Chrome DevTools and the app caches it in `.token_cache.json` (gitignored). The token is assumed valid for ~1 hour from injection time.
+
+Costco's bot-protection reliably blocks automated Azure AD B2C login flows, so only the manual token injection path is supported.
+
+`get_valid_token()` in `auth.py` checks the cache and raises `RuntimeError` with instructions to run `--inject-token` if no valid token is found.
 
 The `id_token` is sent as `costco-x-authorization: Bearer <id_token>` on every API request.
-
-**Because Costco bot-protection often blocks the automated flow**, the primary workaround is `--inject-token`: the user copies the token directly from Chrome DevTools and the app caches it.
-
-Token resolution order in `get_valid_token()`:
-1. Cached `id_token` (valid ~1 hour) — no network
-2. Cached `refresh_token` (valid 90 days) — one silent request
-3. Full B2C login — multi-step browser-like flow
-
-Credentials (email/password) are stored in the OS keyring (`keyring` library). Tokens are cached in `.token_cache.json` (gitignored).
 
 ### Data Flow
 
@@ -69,14 +54,14 @@ Credentials (email/password) are stored in the OS keyring (`keyring` library). T
 | File | Responsibility |
 |------|----------------|
 | `main.py` | CLI argument parsing and command dispatch |
-| `costco_lookup/auth.py` | B2C PKCE auth flow, OS keyring, token cache read/write |
-| `costco_lookup/client.py` | GraphQL HTTP client; handles 401 with one automatic token refresh |
+| `costco_lookup/auth.py` | Token cache read/write; `inject_token`; `get_valid_token` |
+| `costco_lookup/client.py` | GraphQL HTTP client; raises RuntimeError on 401 |
 | `costco_lookup/orders.py` | GraphQL query strings, date chunking, response parsing |
 | `costco_lookup/display.py` | Output formatting: rich table, JSON, CSV |
 | `costco_lookup/config.py` | `config.json` load/save with defaults merged in |
 | `costco_lookup/paths.py` | `BASE_DIR` — resolves to `.exe` folder when frozen by PyInstaller, or project root in script mode |
 | `costco_lookup/logger.py` | Rotating file logger (`costco_lookup.log`) + optional console output |
-| `config.json` | API endpoints, B2C tenant/policy/client IDs, and user's `warehouse_number` |
+| `config.json` | API endpoints and user's `warehouse_number` |
 
 ### PyInstaller / Frozen Mode
 
@@ -84,4 +69,4 @@ Credentials (email/password) are stored in the OS keyring (`keyring` library). T
 
 ### config.json
 
-All B2C and API endpoint values are pre-populated. The only user-supplied field is `warehouse_number` (set via `--setup`). `config.py` merges file contents with `DEFAULT_CONFIG` so new keys added to defaults are automatically present.
+All API endpoint values are pre-populated. The only user-supplied field is `warehouse_number`. `config.py` merges file contents with `DEFAULT_CONFIG` so new keys added to defaults are automatically present.

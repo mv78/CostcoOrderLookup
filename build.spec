@@ -10,13 +10,7 @@
 # .token_cache.json and costco_lookup.log are written at runtime next to the .exe.
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules, collect_entry_point, collect_all
-
-# Collect keyring backends via entry-point metadata.
-# Without this, keyring's plugin discovery finds no backends at runtime
-# and raises NoKeyringError even though the .py files are present.
-keyring_datas, keyring_hidden = collect_entry_point("keyring.backends")
-keyring_hidden += collect_submodules("keyring")
+from PyInstaller.utils.hooks import collect_submodules, collect_all
 
 # collect_all does a full filesystem walk of the rich package, which is
 # required to include rich._unicode_data.unicode17-0-0 (and future versions).
@@ -28,20 +22,8 @@ a = Analysis(
     ['main.py'],
     pathex=[str(Path('.').resolve())],
     binaries=rich_binaries,
-    datas=keyring_datas + rich_datas,
+    datas=rich_datas,
     hiddenimports=[
-        # keyring — all backends + metadata
-        *keyring_hidden,
-        'keyring.backends.Windows',
-        'keyring.backends._win_crypto',
-        'keyring.backends.SecretService',
-        'keyring.backends.macOS',
-        'keyring.backends.fail',
-        'keyring.util.escape',
-        'keyring.credentials',
-        # beautifulsoup4
-        'bs4',
-        'html.parser',
         # rich — collected in full via collect_all above
         *rich_hidden,
         # dateutil
