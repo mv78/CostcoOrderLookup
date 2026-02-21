@@ -11,7 +11,7 @@ from costco_lookup import auth, config as cfg
 from costco_lookup.client import GraphQLClient
 from costco_lookup.downloader import _fetch_and_render_online, _fetch_and_render_warehouse
 from costco_lookup.orders import find_orders_by_item
-from costco_lookup.paths import BASE_DIR
+from costco_lookup.paths import TEMPLATE_DIR
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def create_app() -> Flask:
     """Create and configure the Flask application."""
     app = Flask(
         __name__,
-        template_folder=str(BASE_DIR / "costco_lookup" / "templates"),
+        template_folder=str(TEMPLATE_DIR),
     )
     # Secret key required for flash() / session
     app.secret_key = "costco-order-lookup-web-ui"
