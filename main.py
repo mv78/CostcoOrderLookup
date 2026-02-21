@@ -31,9 +31,9 @@ from costco_lookup import display
 log = logging.getLogger(__name__)
 
 
-def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: bool) -> None:
+def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: bool, download: bool = False) -> None:
     setup_logging(debug)
-    log.info("Item lookup started: item=%s format=%s years=%d", item_number, output_format, search_years)
+    log.info("Item lookup started: item=%s format=%s years=%d download=%s", item_number, output_format, search_years, download)
 
     try:
         config = cfg.load_config()
@@ -73,6 +73,14 @@ def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: b
         display.print_csv(order_list)
     else:
         display.print_table(order_list)
+
+    if download:
+        from costco_lookup import downloader
+        saved = downloader.download_documents(order_list, client, item_number)
+        if saved:
+            print(f"\nDownloaded {len(saved)} file(s) to: {downloader.INVOICES_DIR}")
+            for p in saved:
+                print(f"  {p.name}")
 
 
 def cmd_inject_token(token_arg, debug: bool) -> None:
@@ -167,6 +175,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print DEBUG-level log messages to the terminal (always written to costco_lookup.log).",
     )
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Download HTML invoices/receipts to invoices/ folder.",
+    )
     return parser
 
 
@@ -175,7 +188,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.item:
-        cmd_lookup(args.item, args.output, args.years, args.debug)
+        cmd_lookup(args.item, args.output, args.years, args.debug, args.download)
     elif args.inject_token is not None:
         token_val = None if args.inject_token == "__prompt__" else args.inject_token
         cmd_inject_token(token_val, args.debug)

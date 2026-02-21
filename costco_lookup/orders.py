@@ -83,6 +83,93 @@ query receiptsWithCounts($startDate: String!, $endDate: String!, $documentType: 
   }
 """
 
+RECEIPT_DETAIL_QUERY = """
+query receiptsWithCounts($barcode: String!, $documentType: String!) {
+    receiptsWithCounts(barcode: $barcode, documentType: $documentType) {
+      receipts {
+        warehouseName
+        warehouseNumber
+        warehouseAddress1
+        warehouseAddress2
+        warehouseCity
+        warehouseState
+        warehousePostalCode
+        receiptType
+        documentType
+        transactionDateTime
+        transactionBarcode
+        total
+        subTotal
+        taxes
+        totalItemCount
+        membershipNumber
+        registerNumber
+        transactionNumber
+        operatorNumber
+        instantSavings
+        itemArray {
+          itemNumber
+          itemDescription01
+          itemDescription02
+          itemIdentifier
+          unit
+          amount
+          itemUnitPriceAmount
+          taxFlag
+        }
+        tenderArray {
+          tenderDescription
+          tenderTypeName
+          amountTender
+          displayAccountNumber
+          tenderEntryMethodDescription
+          entryMethod
+        }
+      }
+    }
+  }
+"""
+
+ORDER_DETAIL_QUERY = """
+query getOrderDetails($orderNumbers: [String]!) {
+    getOrderDetails(orderNumbers: $orderNumbers) {
+      orderNumber: sourceOrderNumber
+      orderPlacedDate: orderedDate
+      status
+      orderTotal
+      firstName
+      lastName
+      line1
+      line2
+      city
+      state
+      postalCode
+      orderPayment {
+        paymentType
+        cardNumber
+        totalCharged
+      }
+      orderShipTos {
+        orderLineItems {
+          itemNumber
+          itemDescription: sourceItemDescription
+          quantity: orderedTotalQuantity
+          unitPrice
+          merchandiseTotalAmount
+          orderStatus
+          scheduledDeliveryDate
+          shipment {
+            trackingNumber
+            carrierName
+            deliveredDate
+            estimatedArrivalDate
+          }
+        }
+      }
+    }
+  }
+"""
+
 
 # ---------------------------------------------------------------------------
 # Public entry point
