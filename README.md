@@ -151,15 +151,40 @@ The web UI provides a browser-based interface for token injection, order search,
 
 ## Token Expiry & Renewal
 
-The injected `id_token` lasts **~1 hour**. When it expires, the app will print a message and exit:
+The injected `id_token` lasts **~1 hour**.
 
+### Option A — Manual renewal (always works)
+
+When the token expires the app exits with:
 ```
 [error] No valid token found. Run --inject-token to save a fresh token from Chrome DevTools.
 ```
+Repeat the Chrome DevTools steps above to get a fresh token.
 
-Simply repeat the Chrome DevTools steps above to get a new token. There is no automated renewal — Costco's bot protection blocks silent refresh requests.
+### Option B — Automatic renewal via refresh token (optional)
 
-Your token is stored in `.token_cache.json` in the same folder as the app. It is listed in `.gitignore` and never committed to the repository.
+If you also provide a **refresh token** during `--inject-token`, the app will silently renew the `id_token` on expiry with no browser interaction required.
+
+**How to get the refresh token from Chrome DevTools:**
+
+1. Open DevTools → **Application** tab → **Storage → Local Storage → `https://www.costco.com`**
+2. Look for a key starting with `msal.` containing `"refreshToken"`
+3. Copy the value
+
+Or capture it from the **Network** tab: in the response of the Azure AD B2C `/token` request, look for the `refresh_token` field.
+
+**Inject both tokens (interactive prompt):**
+```bash
+python main.py --inject-token
+# Paste the Bearer token when prompted (press Enter twice)
+# Then paste the refresh_token when prompted (press Enter twice, or Enter to skip)
+```
+
+**Web UI:** The inject form has an optional "Refresh Token" field — paste it there alongside the Bearer token.
+
+Azure AD B2C uses **rotating refresh tokens** — each renewal invalidates the old refresh token and issues a new one. The app saves the latest refresh token automatically.
+
+Your token cache is stored in `.token_cache.json` in the same folder as the app. It is listed in `.gitignore` and never committed to the repository.
 
 ---
 
@@ -265,7 +290,7 @@ Output: `dist\costco-lookup.exe`
 ```
 CostcoOrderLookup/
 ├── costco_lookup/
-│   ├── auth.py         # token cache: load, save, inject, validate expiry
+│   ├── auth.py         # token cache: load, save, inject, validate expiry; auto-refresh via refresh_token
 │   ├── client.py       # GraphQL HTTP client with Costco headers
 │   ├── config.py       # config.json loader/saver
 │   ├── display.py      # table / JSON / CSV output (+ Invoice column)

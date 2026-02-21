@@ -42,11 +42,13 @@ This is a Python CLI that searches Costco order history (both online orders and 
 
 ### Authentication
 
-Authentication is done exclusively via `--inject-token`: the user copies the `costco-x-authorization` Bearer token from Chrome DevTools and the app caches it in `.token_cache.json` (gitignored). The token is assumed valid for ~1 hour from injection time.
+Primary auth: `--inject-token` — user copies the `costco-x-authorization` Bearer token from Chrome DevTools; cached in `.token_cache.json` (gitignored) for ~1 hour.
 
-Costco's bot-protection reliably blocks automated Azure AD B2C login flows, so only the manual token injection path is supported.
+Optional auto-renewal: if the user also provides a `refresh_token` during `--inject-token` (interactive prompt or web form), the app stores it in `.token_cache.json` alongside the `id_token`. On expiry, `get_valid_token()` silently calls `refresh_access_token()` which POSTs to the Azure AD B2C endpoint (`signin.costco.com/.../oauth2/v2.0/token`, `grant_type=refresh_token`). Azure AD B2C uses rotating refresh tokens — the new refresh token is always saved back to cache.
 
-`get_valid_token()` in `auth.py` checks the cache and raises `RuntimeError` with instructions to run `--inject-token` if no valid token is found.
+Costco's bot-protection blocks automated login/signup flows — do **not** re-introduce any Selenium/Playwright/cookie-based auth. The B2C refresh token flow works because it is a pure server-to-server POST with no browser interaction.
+
+`get_valid_token()` in `auth.py`: (1) return cached id_token if valid; (2) if expired and refresh_token present, auto-refresh; (3) raise `RuntimeError` with `--inject-token` instructions.
 
 The `id_token` is sent as `costco-x-authorization: Bearer <id_token>` on every API request.
 

@@ -173,19 +173,45 @@ User pastes token from Chrome DevTools
          ▼
 cmd_inject_token()
    ├─ Strip "Bearer " prefix if present
-   └─ auth.inject_token(id_token)
+   ├─ Prompt for optional refresh_token
+   └─ auth.inject_token(id_token, refresh_token=...)
          │
          ▼
-   save_token_cache(id_token, ttl=3600)
+   save_token_cache(id_token, ttl=3600, refresh_token=...)
          │
          ▼
    .token_cache.json written:
    {
      "token": "eyJ...",
      "token_type": "Bearer",
-     "expires_at": "<now + 1 hour, UTC ISO>"
+     "expires_at": "<now + 1 hour, UTC ISO>",
+     "refresh_token": "eyJ..."   ← optional, present only when provided
    }
 ```
+
+## Data Flow: Token Auto-Renewal
+
+When `get_valid_token()` is called and the cached `id_token` is expired:
+
+```
+get_valid_token()
+   ├─ load_token_cache()   → None (expired)
+   ├─ _load_cache_raw()    → check for refresh_token
+   │
+   ├─ refresh_token present?
+   │    YES → refresh_access_token()
+   │             POST https://signin.costco.com/.../oauth2/v2.0/token
+   │             grant_type=refresh_token
+   │             client_id=a3a5186b-...
+   │             → new id_token + rotated refresh_token
+   │             save_token_cache(new_id_token, refresh_token=new_refresh_token)
+   │             return new id_token
+   │
+   └─ refresh_token absent or refresh failed
+        → raise RuntimeError("Run --inject-token")
+```
+
+Azure AD B2C uses **rotating refresh tokens** — each successful refresh invalidates the old refresh token and issues a new one. `save_token_cache()` always persists the latest refresh token.
 
 ---
 
@@ -196,7 +222,7 @@ cmd_inject_token()
 | `main` | `main.py` | CLI entry point; `build_parser()`, `cmd_lookup()`, `cmd_inject_token()` |
 | `server` | `server.py` | Web UI entry point; starts Flask on `localhost:PORT`, auto-opens browser |
 | `web` | `costco_lookup/web.py` | Flask app factory; 5 routes; reuses core modules directly |
-| `auth` | `costco_lookup/auth.py` | Token cache: load, save, inject, validate expiry |
+| `auth` | `costco_lookup/auth.py` | Token cache: load, save, inject, validate expiry; auto-refresh via Azure AD B2C refresh token |
 | `client` | `costco_lookup/client.py` | `GraphQLClient`: HTTP POST with Costco headers; 401 → RuntimeError |
 | `orders` | `costco_lookup/orders.py` | GraphQL query strings; date chunking; search orchestration; response parsing |
 | `display` | `costco_lookup/display.py` | Output: rich table, JSON, CSV; Invoice column when `--download` used |
@@ -217,8 +243,8 @@ Flask runs on `127.0.0.1:PORT` (localhost only). On startup, `webbrowser.open()`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | Index — token status banner, token injection form, search form |
-| `POST` | `/inject-token` | Calls `auth.inject_token(token)`; redirects to `/` |
+| `GET` | `/` | Index — token status banner, token injection form (+ optional refresh token), search form |
+| `POST` | `/inject-token` | Calls `auth.inject_token(token, refresh_token=...)`; redirects to `/` |
 | `GET` | `/search?item=X&years=N` | Runs `orders.find_orders_by_item()`; renders results table |
 | `GET` | `/receipt/<barcode>` | Fetches warehouse receipt via `RECEIPT_DETAIL_QUERY`; returns full HTML (new tab) |
 | `GET` | `/order/<order_number>` | Fetches online order via `ORDER_DETAIL_QUERY`; returns full HTML (new tab) |
@@ -261,11 +287,14 @@ Flask runs on `127.0.0.1:PORT` (localhost only). On startup, `webbrowser.open()`
 
 ```json
 {
-  "token":      "eyJ...",
-  "token_type": "Bearer",
-  "expires_at": "2025-02-20T11:30:00.000000+00:00"
+  "token":         "eyJ...",
+  "token_type":    "Bearer",
+  "expires_at":    "2025-02-20T11:30:00.000000+00:00",
+  "refresh_token": "eyJ..."
 }
 ```
+
+`refresh_token` is optional. When present, `get_valid_token()` automatically calls `refresh_access_token()` on expiry instead of raising an error. Azure AD B2C rotates the refresh token on each use — the latest value is always saved back to cache.
 
 ### Config (`config.json`)
 
@@ -369,7 +398,9 @@ This ensures config, token, and log files always live next to the executable rat
 | Situation | Behaviour |
 |-----------|-----------|
 | `config.json` missing or no `warehouse_number` | Print error, `sys.exit(1)` |
-| Token expired or cache absent | Print error with `--inject-token` instructions, `sys.exit(1)` |
+| Token expired, refresh_token present | `get_valid_token()` silently calls `refresh_access_token()` and returns new token |
+| Token expired, no refresh_token | Print error with `--inject-token` instructions, `sys.exit(1)` |
+| Token refresh fails (B2C error) | Warning logged; falls through to `--inject-token` error |
 | HTTP 401 from API | `RuntimeError`: "Token expired. Run --inject-token." |
 | Other HTTP error | `RuntimeError` with status; logged + printed; `sys.exit(1)` |
 | GraphQL `errors` array in response | `RuntimeError` with extracted messages |

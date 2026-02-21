@@ -41,14 +41,17 @@ Then inject the token:
 python main.py --inject-token "eyJhbGciOiJSUzI1NiIs..."
 ```
 
-Or use the interactive prompt:
+Or use the interactive prompt (also asks for an optional refresh token):
 
 ```bash
 python main.py --inject-token
-# Paste the token when prompted, press Enter twice
+# Paste the Bearer token when prompted, press Enter twice
+# Then optionally paste a refresh_token and press Enter twice (or Enter to skip)
 ```
 
-The token is cached in `.token_cache.json` for ~1 hour.
+The token is cached in `.token_cache.json` for ~1 hour. If you also provide a refresh token, the app will silently renew on expiry — no repeat of these steps needed.
+
+**Web UI:** Use the inject form on the home page — it has fields for both the Bearer token and the optional refresh token.
 
 ---
 
@@ -90,9 +93,13 @@ When the token expires (~1 hour), repeat step 3 to get a fresh one.
 
 ---
 
-## 6. Token Caching
+## 6. Token Caching & Auto-Renewal
 
-On each run, the app reads `.token_cache.json` and checks the expiry timestamp. If valid, no network call is made for authentication. If expired or absent, the app exits with instructions to run `--inject-token`.
+On each run, the app reads `.token_cache.json` and checks the expiry timestamp:
+
+- **Valid** → used directly, no network call
+- **Expired + refresh_token present** → app silently calls the Azure AD B2C token endpoint, gets a new `id_token` and rotated `refresh_token`, saves both, and continues
+- **Expired + no refresh_token** → app exits with instructions to run `--inject-token`
 
 `.token_cache.json` is in `.gitignore` and should never be committed.
 
@@ -117,7 +124,9 @@ Copy it alongside `config.json` — the config file must stay external so you ca
 | `config.json not found` | Ensure `config.json` is in the same folder as the app |
 | `warehouse_number` missing | Edit `config.json` and set `warehouse_number` |
 | `No valid token found` | Run `--inject-token` with a fresh token from Chrome DevTools |
-| `Token expired. Run --inject-token` | Token is >1 hour old; get a new one from Chrome |
+| `Token expired. Run --inject-token` | Token is >1 hour old and no refresh_token stored; get a new one from Chrome |
+| Token keeps expiring silently | Good — auto-renewal is working via stored refresh_token |
+| Auto-renewal stops working | Azure AD B2C refresh_token may have expired (long idle period); re-run `--inject-token` with a new refresh_token |
 | `GraphQL errors` | Token may be for a different Costco account or region |
 | No results returned | Verify the item number; try `--years 10` to search further back |
 | `.exe` can't find `config.json` | Place `config.json` in the same folder as `costco-lookup.exe` |
