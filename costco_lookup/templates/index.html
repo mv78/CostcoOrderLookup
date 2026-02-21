@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <h2>Inject Bearer Token</h2>
+  <p style="font-size:0.85rem;color:#555;margin-bottom:14px;">
+    Copy the <code>costco-x-authorization</code> Bearer token from Chrome DevTools
+    (Network tab &rarr; any ecom-api.costco.com request &rarr; Headers).
+    Paste everything <strong>after</strong> <code>Bearer </code> below.
+  </p>
+  <form method="POST" action="/inject-token">
+    <label for="token">Bearer Token (eyJ...)</label>
+    <textarea id="token" name="token" placeholder="eyJ..." required></textarea>
+    <button type="submit" class="btn btn-primary">Inject Token</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Search Orders by Item Number</h2>
+  <form method="GET" action="/search">
+    <div class="form-row">
+      <div>
+        <label for="item">Item Number</label>
+        <input type="text" id="item" name="item" placeholder="e.g. 1234567" required>
+      </div>
+      <div style="max-width:160px;">
+        <label for="years">Search Years</label>
+        <select id="years" name="years">
+          <option value="1">1 year</option>
+          <option value="2">2 years</option>
+          <option value="5" selected>5 years</option>
+          <option value="10">10 years</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

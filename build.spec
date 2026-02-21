@@ -22,7 +22,9 @@ a = Analysis(
     ['main.py'],
     pathex=[str(Path('.').resolve())],
     binaries=rich_binaries,
-    datas=rich_datas,
+    datas=rich_datas + [
+        (str(Path('.').resolve() / 'costco_lookup' / 'templates'), 'costco_lookup/templates'),
+    ],
     hiddenimports=[
         # rich — collected in full via collect_all above
         *rich_hidden,
