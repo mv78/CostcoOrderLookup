@@ -11,6 +11,10 @@
   <form method="POST" action="/inject-token">
     <label for="token">Bearer Token (eyJ...)</label>
     <textarea id="token" name="token" placeholder="eyJ..." required></textarea>
+    <label for="refresh_token" style="margin-top:12px;">
+      Refresh Token <span style="font-weight:normal;color:#888;">(optional — enables auto-renewal)</span>
+    </label>
+    <textarea id="refresh_token" name="refresh_token" placeholder="eyJ... (paste refresh_token for automatic renewal)"></textarea>
     <button type="submit" class="btn btn-primary">Inject Token</button>
   </form>
 </div>

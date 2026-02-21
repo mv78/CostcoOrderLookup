@@ -50,14 +50,18 @@ def create_app() -> Flask:
     @app.route("/inject-token", methods=["POST"])
     def inject_token():
         token = (request.form.get("token") or "").strip()
-        log.debug("POST /inject-token token_length=%d", len(token))
+        refresh_token = (request.form.get("refresh_token") or "").strip() or None
+        log.debug("POST /inject-token token_length=%d refresh_token=%s", len(token), "present" if refresh_token else "absent")
         if not token:
             flash("Token cannot be empty.", "error")
             return redirect(url_for("index"))
         try:
-            auth.inject_token(token)
-            flash("Token injected successfully. You can now search orders.", "success")
-            log.info("Token injected via web UI")
+            auth.inject_token(token, refresh_token=refresh_token)
+            if refresh_token:
+                flash("Token + refresh token saved. Token will auto-renew on expiry.", "success")
+            else:
+                flash("Token injected successfully. You can now search orders.", "success")
+            log.info("Token injected via web UI (refresh_token=%s)", "present" if refresh_token else "absent")
         except Exception as exc:
             log.error("inject_token failed: %s", exc)
             flash(f"Failed to save token: {exc}", "error")

@@ -96,6 +96,8 @@ def cmd_inject_token(token_arg, debug: bool) -> None:
     or interactively (prompts for paste) when no value is given:
         python main.py --inject-token
 
+    Optionally also prompts for a refresh_token to enable auto-renewal.
+
     How to get the token:
       1. Open Chrome → costco.com (must be logged in)
       2. DevTools (F12) → Network tab → navigate to Order History
@@ -125,9 +127,23 @@ def cmd_inject_token(token_arg, debug: bool) -> None:
         print("[error] No token provided.")
         sys.exit(1)
 
-    auth.inject_token(token)
-    log.info("Token injected, length=%d", len(token))
-    print("[auth] Token saved (expires in ~1 hour). Run: python main.py --item <ITEM_NUMBER>")
+    # Optionally collect a refresh_token for auto-renewal
+    print("\n[optional] Paste a refresh_token to enable automatic token renewal.")
+    print("Press Enter to skip, or paste and press Enter twice.\n")
+    rt_lines = []
+    while True:
+        line = input()
+        if not line:
+            break
+        rt_lines.append(line.strip())
+    refresh_token = "".join(rt_lines).strip() or None
+
+    auth.inject_token(token, refresh_token=refresh_token)
+    log.info("Token injected, length=%d, refresh_token=%s", len(token), "present" if refresh_token else "absent")
+    if refresh_token:
+        print("[auth] Token + refresh_token saved. Token will auto-renew on expiry.")
+    else:
+        print("[auth] Token saved (expires in ~1 hour). Run: python main.py --item <ITEM_NUMBER>")
 
 
 def _make_session() -> requests.Session:
