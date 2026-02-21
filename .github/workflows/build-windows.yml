@@ -7,7 +7,8 @@ on:
   workflow_dispatch:   # allows manual trigger from the Actions tab
 
 jobs:
-  build:
+  build-cli:
+    name: CLI (costco-lookup.exe)
     runs-on: windows-latest
 
     steps:
@@ -44,5 +45,46 @@ jobs:
         with:
           name: costco-lookup-windows
           path: dist/costco-lookup.exe
+          retention-days: 30
+          if-no-files-found: error
+
+  build-server:
+    name: Web UI (costco-lookup-server.exe)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install "pyinstaller>=6.0"
+
+      - name: Build with PyInstaller
+        run: pyinstaller build-server.spec --clean --noconfirm
+
+      - name: Verify output
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist\costco-lookup-server.exe")) {
+            Write-Error "dist\costco-lookup-server.exe was not created"
+            exit 1
+          }
+          $size = (Get-Item "dist\costco-lookup-server.exe").Length / 1MB
+          Write-Host "Build successful: dist\costco-lookup-server.exe ($([math]::Round($size, 1)) MB)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: costco-lookup-server-windows
+          path: dist/costco-lookup-server.exe
           retention-days: 30
           if-no-files-found: error
