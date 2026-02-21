@@ -66,7 +66,12 @@ python main.py --item 1900477 --output csv
 
 # Search further back (default is 5 years)
 python main.py --item 1900477 --years 10
+
+# Download HTML receipts/invoices and open them in your browser
+python main.py --item 1900477 --download
 ```
+
+`--download` fetches full receipt or order detail for each matched result, saves HTML files to the `invoices/` folder alongside the app, and automatically opens each file in your default browser. The output table gains an **Invoice** column (✓ = file saved).
 
 When the token expires (~1 hour), repeat step 3 to get a fresh one.
 
@@ -103,3 +108,5 @@ Copy it alongside `config.json` — the config file must stay external so you ca
 | `GraphQL errors` | Token may be for a different Costco account or region |
 | No results returned | Verify the item number; try `--years 10` to search further back |
 | `.exe` can't find `config.json` | Place `config.json` in the same folder as `costco-lookup.exe` |
+| `--download` saves file but doesn't open | Browser auto-open uses `webbrowser` stdlib; ensure a default browser is set in your OS |
+| `--download` Invoice column missing | Download runs before display; if column absent, no files were saved (check log for errors) |

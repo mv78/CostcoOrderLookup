@@ -110,8 +110,9 @@ python main.py --inject-token "eyJ..."  # inject token inline
 python main.py --item ITEM_NUMBER        # search by Costco item number
 python main.py --item ITEM_NUMBER --output json
 python main.py --item ITEM_NUMBER --output csv
-python main.py --item ITEM_NUMBER --years 10   # search further back (default: 5)
-python main.py --item ITEM_NUMBER --debug      # verbose logging to terminal
+python main.py --item ITEM_NUMBER --years 10     # search further back (default: 5)
+python main.py --item ITEM_NUMBER --debug        # verbose logging to terminal
+python main.py --item ITEM_NUMBER --download     # save HTML receipts/invoices and open in browser
 ```
 
 ### Output columns
@@ -129,6 +130,7 @@ python main.py --item ITEM_NUMBER --debug      # verbose logging to terminal
 | Carrier | Shipping carrier (online orders) |
 | Tracking # | Carrier tracking number (online orders) |
 | Tender | Payment method (warehouse receipts) |
+| Invoice | ✓ when `--download` was used; HTML file saved to `invoices/` and opened in browser |
 
 ---
 
@@ -248,13 +250,14 @@ Output: `dist\costco-lookup.exe`
 ```
 CostcoOrderLookup/
 ├── costco_lookup/
-│   ├── auth.py       # token cache: load, save, inject, validate expiry
-│   ├── client.py     # GraphQL HTTP client with Costco headers
-│   ├── config.py     # config.json loader/saver
-│   ├── display.py    # table / JSON / CSV output
-│   ├── logger.py     # rotating file + console logging
-│   ├── orders.py     # GraphQL queries + date chunking + response parsing
-│   └── paths.py      # BASE_DIR for script and .exe modes
+│   ├── auth.py         # token cache: load, save, inject, validate expiry
+│   ├── client.py       # GraphQL HTTP client with Costco headers
+│   ├── config.py       # config.json loader/saver
+│   ├── display.py      # table / JSON / CSV output (+ Invoice column)
+│   ├── downloader.py   # --download: fetch detail, render HTML, auto-open in browser
+│   ├── logger.py       # rotating file + console logging
+│   ├── orders.py       # GraphQL queries + date chunking + response parsing
+│   └── paths.py        # BASE_DIR for script and .exe modes
 ├── .github/
 │   └── workflows/
 │       └── build-windows.yml   # automated Windows .exe build

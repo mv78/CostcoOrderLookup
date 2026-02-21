@@ -202,8 +202,12 @@ cmd_inject_token()
     "receipt_total": str,   # "$123.45"
     "warehouse":     str,
     "tender":        str,   # "Visa $100.00, Amex $50.00" / "—"
+    # Added by downloader.download_documents() when --download is used:
+    "invoice_path":  str,   # absolute path to saved HTML file (optional)
 }
 ```
+
+`invoice_path` is stamped onto the record in-place by `downloader.download_documents()` before `display.py` renders output. `display.py` adds an **Invoice** column (✓) only when any record has this key. `print_json` includes it automatically; `print_csv` adds it to fieldnames dynamically.
 
 ### Token cache (`.token_cache.json`)
 

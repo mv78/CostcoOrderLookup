@@ -14,6 +14,9 @@ python main.py --item ITEM_NUMBER --output json
 python main.py --item ITEM_NUMBER --output csv
 python main.py --item ITEM_NUMBER --years 10
 
+# Download HTML receipts/invoices for matched results (opens in browser)
+python main.py --item ITEM_NUMBER --download
+
 # Inject a bearer token from Chrome DevTools (required before first use)
 python main.py --inject-token "eyJ..."
 python main.py --inject-token   # interactive prompt
@@ -57,7 +60,8 @@ The `id_token` is sent as `costco-x-authorization: Bearer <id_token>` on every A
 | `costco_lookup/auth.py` | Token cache read/write; `inject_token`; `get_valid_token` |
 | `costco_lookup/client.py` | GraphQL HTTP client; raises RuntimeError on 401 |
 | `costco_lookup/orders.py` | GraphQL query strings, date chunking, response parsing |
-| `costco_lookup/display.py` | Output formatting: rich table, JSON, CSV |
+| `costco_lookup/display.py` | Output formatting: rich table, JSON, CSV; Invoice column when `--download` used |
+| `costco_lookup/downloader.py` | `--download`: fetch full receipt/order detail, render HTML, stamp `invoice_path` on records, auto-open in browser |
 | `costco_lookup/config.py` | `config.json` load/save with defaults merged in |
 | `costco_lookup/paths.py` | `BASE_DIR` — resolves to `.exe` folder when frozen by PyInstaller, or project root in script mode |
 | `costco_lookup/logger.py` | Rotating file logger (`costco_lookup.log`) + optional console output |
