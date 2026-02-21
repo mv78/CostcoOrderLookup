@@ -8,6 +8,9 @@ costco_lookup.log.*
 # HAR exports — contain live tokens, cookies, and personal data
 *.har
 
+# Postman collections — may contain live tokens/credentials
+*.postman_collection.json
+
 # Temporary helper scripts
 store_creds.py
 
