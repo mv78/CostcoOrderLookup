@@ -37,17 +37,27 @@ def print_table(orders: list[dict]) -> None:
         console.print("[yellow]No orders found for that item number.[/yellow]")
         return
 
+    has_invoices = any(o.get("invoice_path") for o in orders)
+    columns = list(TABLE_COLUMNS)
+    if has_invoices:
+        columns.append(("invoice_path", "Invoice", "center"))
+
     table = Table(show_header=True, header_style="bold cyan", show_lines=True)
-    for key, label, justify in TABLE_COLUMNS:
+    for key, label, justify in columns:
         table.add_column(label, justify=justify, overflow="fold", no_wrap=(key == "tracking"))
 
     for order in orders:
         source = order.get("source", "")
         row_style = "bright_white" if source == "online" else "dim"
-        table.add_row(
-            *[_fmt_cell(key, order.get(key, "—")) for key, _, _ in TABLE_COLUMNS],
-            style=row_style,
-        )
+        cells = []
+        for key, _, _ in columns:
+            if key == "invoice_path":
+                path_str = order.get("invoice_path")
+                cell = Text("✓", style="bold green") if path_str else Text("—")
+                cells.append(cell)
+            else:
+                cells.append(_fmt_cell(key, order.get(key, "—")))
+        table.add_row(*cells, style=row_style)
 
     console.print(table)
     online = sum(1 for o in orders if o.get("source") == "online")
@@ -66,9 +76,11 @@ def print_csv(orders: list[dict]) -> None:
     """Write orders as CSV to stdout."""
     if not orders:
         return
+    has_invoices = any(o.get("invoice_path") for o in orders)
+    fieldnames = ALL_KEYS + (["invoice_path"] if has_invoices else [])
     writer = csv.DictWriter(
         sys.stdout,
-        fieldnames=ALL_KEYS,
+        fieldnames=fieldnames,
         extrasaction="ignore",
         lineterminator="\n",
     )

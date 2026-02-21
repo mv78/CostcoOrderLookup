@@ -108,6 +108,7 @@ def download_documents(
 
         if out_path.exists():
             log.warning("Skipping existing file: %s", out_path)
+            record["invoice_path"] = str(out_path)
             continue
 
         try:
@@ -121,6 +122,7 @@ def download_documents(
 
             out_path.write_text(html, encoding="utf-8")
             log.info("Saved invoice: %s", out_path)
+            record["invoice_path"] = str(out_path)
             saved.append(out_path)
 
         except Exception as exc:

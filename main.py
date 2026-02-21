@@ -67,6 +67,10 @@ def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: b
 
     log.info("Lookup complete: %d result(s) for item %s", len(order_list), item_number)
 
+    if download:
+        from costco_lookup import downloader
+        saved = downloader.download_documents(order_list, client, item_number)
+
     if output_format == "json":
         display.print_json(order_list)
     elif output_format == "csv":
@@ -75,12 +79,12 @@ def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: b
         display.print_table(order_list)
 
     if download:
-        from costco_lookup import downloader
-        saved = downloader.download_documents(order_list, client, item_number)
         if saved:
+            import webbrowser
             print(f"\nDownloaded {len(saved)} file(s) to: {downloader.INVOICES_DIR}")
             for p in saved:
                 print(f"  {p.name}")
+                webbrowser.open(p.as_uri())
 
 
 def cmd_inject_token(token_arg, debug: bool) -> None:
