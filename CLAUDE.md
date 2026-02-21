@@ -71,17 +71,22 @@ The `id_token` is sent as `costco-x-authorization: Bearer <id_token>` on every A
 | `costco_lookup/web.py` | Flask app factory; 5 routes for web UI; reuses auth, config, client, orders, downloader |
 | `costco_lookup/templates/` | Jinja2 templates for web UI (base, index, results); resolved via `BASE_DIR` for .exe compat |
 | `costco_lookup/config.py` | `config.json` load/save with defaults merged in |
-| `costco_lookup/paths.py` | `BASE_DIR` — resolves to `.exe` folder when frozen by PyInstaller, or project root in script mode |
+| `costco_lookup/paths.py` | `BASE_DIR` (runtime files) and `TEMPLATE_DIR` (bundled templates) — each resolves correctly in script and frozen `.exe` modes |
 | `costco_lookup/logger.py` | Rotating file logger (`costco_lookup.log`) + optional console output |
 | `config.json` | API endpoints and user's `warehouse_number` |
 
 ### Web UI
 
-`server.py` starts Flask on `localhost:8080` (default) and auto-opens the browser. Routes call the same core modules as the CLI — no duplication. Template folder is resolved via `BASE_DIR`, not `__file__`, for frozen `.exe` compatibility. Default port avoids 5000 (macOS AirPlay Receiver conflict).
+`server.py` starts Flask on `localhost:8080` (default) and auto-opens the browser. Routes call the same core modules as the CLI — no duplication. Template folder uses `TEMPLATE_DIR` from `paths.py` (not `BASE_DIR`) — in frozen mode templates are in `sys._MEIPASS`, not the `.exe` folder. Default port avoids 5000 (macOS AirPlay Receiver conflict).
 
 ### PyInstaller / Frozen Mode
 
-`paths.py` is critical for the Windows `.exe` build. PyInstaller onefile mode extracts to a temp dir (`sys._MEIPASS`), so `Path(__file__)` would resolve there. `BASE_DIR` detects the frozen environment and uses `Path(sys.executable).parent` instead, keeping `config.json`, `.token_cache.json`, and `costco_lookup.log` alongside the executable. The GitHub Actions workflow (`.github/workflows/build-windows.yml`) automates this build.
+`paths.py` exports two constants — use the right one:
+
+- **`BASE_DIR`** → `Path(sys.executable).parent` in frozen mode. Use for all mutable runtime files: `config.json`, `.token_cache.json`, `costco_lookup.log`, `invoices/`. These must live next to the `.exe`.
+- **`TEMPLATE_DIR`** → `Path(sys._MEIPASS) / "costco_lookup" / "templates"` in frozen mode. Use for Jinja2 `template_folder`. PyInstaller extracts bundled `datas[]` to `sys._MEIPASS` (a temp dir), never to the `.exe` folder. Using `BASE_DIR` for templates causes `TemplateNotFound`.
+
+The GitHub Actions workflow (`.github/workflows/build-windows.yml`) automates both `.exe` builds.
 
 ### config.json
 

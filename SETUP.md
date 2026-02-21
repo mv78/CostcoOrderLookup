@@ -134,3 +134,4 @@ Copy it alongside `config.json` — the config file must stay external so you ca
 | `--download` Invoice column missing | Download runs before display; if column absent, no files were saved (check log for errors) |
 | Web UI shows blank page on macOS | Port 5000 is taken by AirPlay Receiver — use `python server.py --port 8080` (already the default) |
 | Web UI "No valid token" after injecting | Token saved to `.token_cache.json`; refresh the page to see updated status |
+| Web UI `TemplateNotFound: index.html` on `.exe` | Outdated build — rebuild from latest source; fix was to use `TEMPLATE_DIR` (sys._MEIPASS) instead of `BASE_DIR` for templates |

@@ -228,7 +228,7 @@ Azure AD B2C uses **rotating refresh tokens** — each successful refresh invali
 | `display` | `costco_lookup/display.py` | Output: rich table, JSON, CSV; Invoice column when `--download` used |
 | `downloader` | `costco_lookup/downloader.py` | HTML rendering for receipts/invoices; used by CLI `--download` and web `/receipt`, `/order` routes |
 | `config` | `costco_lookup/config.py` | `load_config()` / `save_config()`: merge defaults, validate |
-| `paths` | `costco_lookup/paths.py` | `BASE_DIR`: project root in dev, `.exe` folder when frozen |
+| `paths` | `costco_lookup/paths.py` | `BASE_DIR` (runtime files) and `TEMPLATE_DIR` (bundled assets): each resolves correctly in both script and frozen `.exe` modes |
 | `logger` | `costco_lookup/logger.py` | `setup_logging(debug)`: rotating file + console handlers |
 
 ---
@@ -249,7 +249,7 @@ Flask runs on `127.0.0.1:PORT` (localhost only). On startup, `webbrowser.open()`
 | `GET` | `/receipt/<barcode>` | Fetches warehouse receipt via `RECEIPT_DETAIL_QUERY`; returns full HTML (new tab) |
 | `GET` | `/order/<order_number>` | Fetches online order via `ORDER_DETAIL_QUERY`; returns full HTML (new tab) |
 
-**Template folder:** `costco_lookup/templates/` — resolved via `BASE_DIR` (not `__file__`) for PyInstaller compatibility.
+**Template folder:** resolved via `TEMPLATE_DIR` from `paths.py` — in frozen mode this is `sys._MEIPASS/costco_lookup/templates/` (where PyInstaller extracts bundled data), not `BASE_DIR` (which is the `.exe` folder for runtime files only).
 
 **No CDN dependencies** — all CSS is inline in `base.html`; works fully offline and inside the `.exe`.
 
@@ -382,14 +382,16 @@ BASE_DIR/costco_lookup/templates/
 └── results.html          ← rich results table with source/status badges
 ```
 
-**`BASE_DIR` resolution (`paths.py`):**
+**Path resolution (`paths.py`):**
 
-| Context | `BASE_DIR` |
-|---------|-----------|
-| Dev (script mode) | project root (`main.py`'s directory) |
-| Frozen (`.exe`) | directory containing `costco-lookup.exe` |
+Two distinct path constants serve different purposes:
 
-This ensures config, token, and log files always live next to the executable rather than in PyInstaller's ephemeral temp directory.
+| Constant | Dev (script mode) | Frozen (`.exe`) | Purpose |
+|----------|-------------------|-----------------|---------|
+| `BASE_DIR` | project root | directory containing the `.exe` | Mutable runtime files: `config.json`, `.token_cache.json`, `costco_lookup.log`, `invoices/` |
+| `TEMPLATE_DIR` | `costco_lookup/templates/` | `sys._MEIPASS/costco_lookup/templates/` | Read-only bundled assets: Jinja2 templates |
+
+**Critical distinction:** PyInstaller extracts bundled `datas[]` entries to `sys._MEIPASS` (an ephemeral temp directory), not to the `.exe` folder. Using `BASE_DIR` for templates in frozen mode causes `TemplateNotFound` because templates are never copied alongside the `.exe`. `TEMPLATE_DIR` always resolves to wherever PyInstaller actually places the bundled files.
 
 ---
 
