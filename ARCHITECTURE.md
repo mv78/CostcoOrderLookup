@@ -19,6 +19,7 @@ Costco Order Lookup is a Python CLI that searches Costco order history by item n
 │                                                                 │
 │   build_parser()          cmd_lookup()     cmd_inject_token()   │
 │   (argparse)              --item           --inject-token       │
+│                           --download                            │
 └──────┬──────────────────────┬──────────────────────┬───────────┘
        │                      │                      │
        ▼                      ▼                      ▼
@@ -60,13 +61,25 @@ Costco Order Lookup is a Python CLI that searches Costco order history by item n
               └───────────┬────────────┘
                           │ JSON response
                           ▼
-              ┌────────────────────────┐
-              │      display.py        │
-              │                        │
-              │  print_table()  (rich) │
-              │  print_json()          │
-              │  print_csv()           │
-              └────────────────────────┘
+              ┌────────────────────────┐      ┌──────────────────────┐
+              │      display.py        │      │     downloader.py    │
+              │                        │      │  (--download only)   │
+              │  print_table()  (rich) │      │                      │
+              │  print_json()          │      │ download_documents() │
+              │  print_csv()           │      │  ├─ RECEIPT_DETAIL   │
+              └────────────────────────┘      │  │  _QUERY (warehouse│
+                                              │  └─ ORDER_DETAIL     │
+                                              │     _QUERY (online)  │
+                                              │ _generate_warehouse_ │
+                                              │   html()             │
+                                              │ _generate_online_    │
+                                              │   html()             │
+                                              └──────────┬───────────┘
+                                                         │ HTML files
+                                                         ▼
+                                              ┌──────────────────────┐
+                                              │  BASE_DIR/invoices/  │
+                                              └──────────────────────┘
 ```
 
 ---
@@ -116,6 +129,18 @@ Costco Order Lookup is a Python CLI that searches Costco order history by item n
       │
       ▼
 7. display.print_table() / print_json() / print_csv()
+      │
+      ▼
+8. (optional) downloader.download_documents()   [only with --download]
+   │
+   ├─ For each result record:
+   │   ├─ warehouse → client.execute(RECEIPT_DETAIL_QUERY, {barcode, documentType})
+   │   │   └─ _generate_warehouse_html() → Costco receipt layout + Code128 barcode SVG
+   │   └─ online   → client.execute(ORDER_DETAIL_QUERY, {orderNumbers})
+   │       └─ _generate_online_html() → order summary with line items, tracking, payment
+   │
+   └─ Write BASE_DIR/invoices/{item}_{source}_{id}_{date}.html
+      (skips existing files; logs warning on per-record failure)
 ```
 
 ---
@@ -153,6 +178,7 @@ cmd_inject_token()
 | `client` | `costco_lookup/client.py` | `GraphQLClient`: HTTP POST with Costco headers; 401 → RuntimeError |
 | `orders` | `costco_lookup/orders.py` | GraphQL query strings; date chunking; search orchestration; response parsing |
 | `display` | `costco_lookup/display.py` | Output: rich table, JSON, CSV |
+| `downloader` | `costco_lookup/downloader.py` | `--download`: fetch full receipt/order detail; render HTML invoices to `invoices/` |
 | `config` | `costco_lookup/config.py` | `load_config()` / `save_config()`: merge defaults, validate |
 | `paths` | `costco_lookup/paths.py` | `BASE_DIR`: project root in dev, `.exe` folder when frozen |
 | `logger` | `costco_lookup/logger.py` | `setup_logging(debug)`: rotating file + console handlers |
@@ -221,12 +247,16 @@ cmd_inject_token()
 | `costco.service` | `restOrders` |
 | `Origin` | `https://www.costco.com` |
 
-**Queries (both defined verbatim from a captured HAR in `orders.py`):**
+**Queries (all defined verbatim from captured HARs in `orders.py`):**
 
-| Query | Source | Pagination |
-|-------|--------|------------|
-| `getOnlineOrders` | Online orders | Yes — `pageNumber` / `pageSize` (50) |
-| `receiptsWithCounts` | Warehouse receipts | No |
+| Query constant | GraphQL operation | Used by | Pagination |
+|----------------|------------------|---------|------------|
+| `GET_ONLINE_ORDERS_QUERY` | `getOnlineOrders` | search | Yes — `pageNumber` / `pageSize` (50) |
+| `RECEIPTS_WITH_COUNTS_QUERY` | `receiptsWithCounts` | search | No |
+| `RECEIPT_DETAIL_QUERY` | `receiptsWithCounts` | `--download` (warehouse) | No |
+| `ORDER_DETAIL_QUERY` | `getOrderDetails` | `--download` (online) | No |
+
+**`ORDER_DETAIL_QUERY` structure note:** Address fields are flat on the order object (not a sub-object). Line items are nested under `orderShipTos[].orderLineItems[]`. Field aliases used: `orderNumber: sourceOrderNumber`, `orderPlacedDate: orderedDate`, `itemDescription: sourceItemDescription`, `quantity: orderedTotalQuantity`.
 
 **Date format quirk:**
 
@@ -260,7 +290,9 @@ A failed chunk (e.g., network error) is logged as a warning and skipped; the res
 BASE_DIR/
 ├── config.json           ← user config (warehouse number + API defaults)
 ├── .token_cache.json     ← injected Bearer token + expiry  [gitignored]
-└── costco_lookup.log     ← rotating file log, always DEBUG  [gitignored]
+├── costco_lookup.log     ← rotating file log, always DEBUG  [gitignored]
+└── invoices/             ← HTML receipts/invoices (created by --download)  [gitignored]
+    └── {item}_{source}_{order_id}_{date}.html
 ```
 
 **`BASE_DIR` resolution (`paths.py`):**
@@ -307,8 +339,9 @@ Rotation: 5 MB per file, 3 backups kept (~15 MB total). Noisy third-party logger
 Key packaging decisions:
 - `collect_all('rich')` — required because `rich` loads locale data via `importlib.import_module()` at runtime, which static analysis misses.
 - `dateutil`, `requests`, `certifi`, `charset_normalizer`, `idna` added as hidden imports.
+- `python-barcode` used in `downloader.py` for Code128 SVG generation; no additional PyInstaller hooks needed (pure Python).
 - `config.json` is **not** bundled — it stays external so users can edit `warehouse_number`.
-- `.token_cache.json` and `costco_lookup.log` are created at runtime next to the `.exe`.
+- `.token_cache.json`, `costco_lookup.log`, and `invoices/` are created at runtime next to the `.exe`.
 
 Build command:
 ```bash
