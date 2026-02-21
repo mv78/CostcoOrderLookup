@@ -6,9 +6,15 @@ Search your entire Costco order history — both online orders and in-warehouse 
 
 ## Quick Start
 
+**CLI:**
 ```
 python main.py --inject-token    # paste token from Chrome (see below)
 python main.py --item 1900477    # search for item
+```
+
+**Web UI:**
+```
+python server.py                 # opens http://localhost:8080 in your browser
 ```
 
 ---
@@ -104,6 +110,7 @@ python main.py --item 1900477
 
 ## Usage
 
+**CLI:**
 ```
 python main.py --inject-token            # save token from Chrome DevTools
 python main.py --inject-token "eyJ..."  # inject token inline
@@ -114,6 +121,14 @@ python main.py --item ITEM_NUMBER --years 10     # search further back (default:
 python main.py --item ITEM_NUMBER --debug        # verbose logging to terminal
 python main.py --item ITEM_NUMBER --download     # save HTML receipts/invoices and open in browser
 ```
+
+**Web UI:**
+```
+python server.py                 # start on localhost:8080, opens browser automatically
+python server.py --port 9000     # use a custom port
+```
+
+The web UI provides a browser-based interface for token injection, order search, and viewing receipts/invoices inline in a new tab — no command line required.
 
 ### Output columns
 
@@ -254,14 +269,20 @@ CostcoOrderLookup/
 │   ├── client.py       # GraphQL HTTP client with Costco headers
 │   ├── config.py       # config.json loader/saver
 │   ├── display.py      # table / JSON / CSV output (+ Invoice column)
-│   ├── downloader.py   # --download: fetch detail, render HTML, auto-open in browser
+│   ├── downloader.py   # receipt/invoice HTML rendering (CLI --download + web routes)
 │   ├── logger.py       # rotating file + console logging
 │   ├── orders.py       # GraphQL queries + date chunking + response parsing
-│   └── paths.py        # BASE_DIR for script and .exe modes
+│   ├── paths.py        # BASE_DIR for script and .exe modes
+│   ├── web.py          # Flask app factory + all web routes
+│   └── templates/
+│       ├── base.html   # nav, token banner, inline CSS
+│       ├── index.html  # token injection + search form
+│       └── results.html# rich results table
 ├── .github/
 │   └── workflows/
 │       └── build-windows.yml   # automated Windows .exe build
 ├── main.py           # CLI entry point
+├── server.py         # Web UI entry point (Flask, localhost:8080)
 ├── config.json       # API endpoints + warehouse number
 ├── requirements.txt
 ├── build.spec        # PyInstaller config

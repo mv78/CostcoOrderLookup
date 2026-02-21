@@ -2,25 +2,45 @@
 
 ## Overview
 
-Costco Order Lookup is a Python CLI that searches Costco order history by item number, spanning both online orders and in-warehouse receipts across multiple years. Authentication relies exclusively on a Bearer token manually copied from Chrome DevTools; Costco's bot-protection blocks all automated login flows.
+Costco Order Lookup is a Python CLI and local web application that searches Costco order history by item number, spanning both online orders and in-warehouse receipts across multiple years. Authentication relies exclusively on a Bearer token manually copied from Chrome DevTools; Costco's bot-protection blocks all automated login flows.
+
+Two entry points share the same core modules:
+- **`main.py`** — CLI (`--item`, `--inject-token`, `--download`)
+- **`server.py`** — Flask web UI on `localhost:8080` (default)
 
 ---
 
 ## Component Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                          User / Shell                           │
-└────────────────────────┬────────────────────────────────────────┘
-                         │  CLI args
-                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         main.py                                 │
-│                                                                 │
-│   build_parser()          cmd_lookup()     cmd_inject_token()   │
-│   (argparse)              --item           --inject-token       │
-│                           --download                            │
-└──────┬──────────────────────┬──────────────────────┬───────────┘
+┌──────────────────────────────┐   ┌──────────────────────────────┐
+│        User / Shell          │   │       User / Browser         │
+└──────────────┬───────────────┘   └──────────────┬───────────────┘
+               │  CLI args                         │  HTTP
+               ▼                                   ▼
+┌──────────────────────────────┐   ┌──────────────────────────────┐
+│           main.py            │   │          server.py           │
+│  build_parser()              │   │  argparse --port (def 8080)  │
+│  cmd_lookup()   --item       │   │  create_app()                │
+│                 --download   │   │  webbrowser.open()           │
+│  cmd_inject_token()          │   └──────────────┬───────────────┘
+└──────┬───────────────────────┘                  │
+       │                                          ▼
+       │                          ┌──────────────────────────────┐
+       │                          │          web.py              │
+       │                          │  Flask app factory           │
+       │                          │  GET  /                      │
+       │                          │  POST /inject-token          │
+       │                          │  GET  /search                │
+       │                          │  GET  /receipt/<barcode>     │
+       │                          │  GET  /order/<order_number>  │
+       └──────────────────────────┴──────────────────────────────┘
+                                           │  shared modules
+                                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                        Shared Core                               │
+└──────┬──────────────────────┬──────────────────────┬────────────┘
+       │                      │                      │
        │                      │                      │
        ▼                      ▼                      ▼
 ┌─────────────┐    ┌──────────────────┐   ┌─────────────────────┐
@@ -174,14 +194,42 @@ cmd_inject_token()
 | Module | File | Responsibility |
 |--------|------|----------------|
 | `main` | `main.py` | CLI entry point; `build_parser()`, `cmd_lookup()`, `cmd_inject_token()` |
+| `server` | `server.py` | Web UI entry point; starts Flask on `localhost:PORT`, auto-opens browser |
+| `web` | `costco_lookup/web.py` | Flask app factory; 5 routes; reuses core modules directly |
 | `auth` | `costco_lookup/auth.py` | Token cache: load, save, inject, validate expiry |
 | `client` | `costco_lookup/client.py` | `GraphQLClient`: HTTP POST with Costco headers; 401 → RuntimeError |
 | `orders` | `costco_lookup/orders.py` | GraphQL query strings; date chunking; search orchestration; response parsing |
-| `display` | `costco_lookup/display.py` | Output: rich table, JSON, CSV |
-| `downloader` | `costco_lookup/downloader.py` | `--download`: fetch full receipt/order detail; render HTML invoices to `invoices/` |
+| `display` | `costco_lookup/display.py` | Output: rich table, JSON, CSV; Invoice column when `--download` used |
+| `downloader` | `costco_lookup/downloader.py` | HTML rendering for receipts/invoices; used by CLI `--download` and web `/receipt`, `/order` routes |
 | `config` | `costco_lookup/config.py` | `load_config()` / `save_config()`: merge defaults, validate |
 | `paths` | `costco_lookup/paths.py` | `BASE_DIR`: project root in dev, `.exe` folder when frozen |
 | `logger` | `costco_lookup/logger.py` | `setup_logging(debug)`: rotating file + console handlers |
+
+---
+
+## Web UI
+
+**Entry point:** `python server.py [--port 8080]`
+
+Flask runs on `127.0.0.1:PORT` (localhost only). On startup, `webbrowser.open()` launches the default browser automatically.
+
+**Routes:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Index — token status banner, token injection form, search form |
+| `POST` | `/inject-token` | Calls `auth.inject_token(token)`; redirects to `/` |
+| `GET` | `/search?item=X&years=N` | Runs `orders.find_orders_by_item()`; renders results table |
+| `GET` | `/receipt/<barcode>` | Fetches warehouse receipt via `RECEIPT_DETAIL_QUERY`; returns full HTML (new tab) |
+| `GET` | `/order/<order_number>` | Fetches online order via `ORDER_DETAIL_QUERY`; returns full HTML (new tab) |
+
+**Template folder:** `costco_lookup/templates/` — resolved via `BASE_DIR` (not `__file__`) for PyInstaller compatibility.
+
+**No CDN dependencies** — all CSS is inline in `base.html`; works fully offline and inside the `.exe`.
+
+**Port note:** Default port is `8080`. Port `5000` is avoided — macOS Monterey+ reserves it for AirPlay Receiver (`ControlCenter`).
+
+**Shared modules:** `web.py` calls `auth`, `config`, `client`, `orders`, and `downloader` directly — no code duplication between CLI and web paths.
 
 ---
 
@@ -297,6 +345,12 @@ BASE_DIR/
 ├── costco_lookup.log     ← rotating file log, always DEBUG  [gitignored]
 └── invoices/             ← HTML receipts/invoices (created by --download)  [gitignored]
     └── {item}_{source}_{order_id}_{date}.html
+
+# Web UI templates (bundled into .exe via build.spec datas)
+BASE_DIR/costco_lookup/templates/
+├── base.html             ← nav, token banner, flash messages, inline CSS
+├── index.html            ← token injection form + search form
+└── results.html          ← rich results table with source/status badges
 ```
 
 **`BASE_DIR` resolution (`paths.py`):**

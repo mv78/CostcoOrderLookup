@@ -24,6 +24,10 @@ python main.py --inject-token   # interactive prompt
 # Verbose logging to terminal
 python main.py --item ITEM_NUMBER --debug
 
+# Start web UI (opens http://localhost:8080 automatically)
+python server.py
+python server.py --port 9000     # custom port
+
 # Build Windows .exe (Windows only or via GitHub Actions)
 pip install pyinstaller
 pyinstaller build.spec --clean --noconfirm
@@ -61,11 +65,17 @@ The `id_token` is sent as `costco-x-authorization: Bearer <id_token>` on every A
 | `costco_lookup/client.py` | GraphQL HTTP client; raises RuntimeError on 401 |
 | `costco_lookup/orders.py` | GraphQL query strings, date chunking, response parsing |
 | `costco_lookup/display.py` | Output formatting: rich table, JSON, CSV; Invoice column when `--download` used |
-| `costco_lookup/downloader.py` | `--download`: fetch full receipt/order detail, render HTML, stamp `invoice_path` on records, auto-open in browser |
+| `costco_lookup/downloader.py` | HTML rendering for receipts/invoices; used by CLI `--download` and web `/receipt`, `/order` routes |
+| `costco_lookup/web.py` | Flask app factory; 5 routes for web UI; reuses auth, config, client, orders, downloader |
+| `costco_lookup/templates/` | Jinja2 templates for web UI (base, index, results); resolved via `BASE_DIR` for .exe compat |
 | `costco_lookup/config.py` | `config.json` load/save with defaults merged in |
 | `costco_lookup/paths.py` | `BASE_DIR` — resolves to `.exe` folder when frozen by PyInstaller, or project root in script mode |
 | `costco_lookup/logger.py` | Rotating file logger (`costco_lookup.log`) + optional console output |
 | `config.json` | API endpoints and user's `warehouse_number` |
+
+### Web UI
+
+`server.py` starts Flask on `localhost:8080` (default) and auto-opens the browser. Routes call the same core modules as the CLI — no duplication. Template folder is resolved via `BASE_DIR`, not `__file__`, for frozen `.exe` compatibility. Default port avoids 5000 (macOS AirPlay Receiver conflict).
 
 ### PyInstaller / Frozen Mode
 

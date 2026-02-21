@@ -52,7 +52,20 @@ The token is cached in `.token_cache.json` for ~1 hour.
 
 ---
 
-## 4. Daily Usage
+## 4. Web UI (Alternative to CLI)
+
+```bash
+python server.py                 # opens http://localhost:8080 automatically
+python server.py --port 9000     # custom port
+```
+
+The web UI lets you inject tokens, search orders, and view receipts/invoices directly in the browser — no command line required after the initial setup. Receipt and invoice HTML opens in a new browser tab.
+
+> **macOS note:** Port 5000 is reserved by AirPlay Receiver on macOS Monterey+. The default port is 8080 to avoid this conflict.
+
+---
+
+## 5. Daily Usage (CLI)
 
 ```bash
 # Look up orders containing item number 1900477
@@ -77,7 +90,7 @@ When the token expires (~1 hour), repeat step 3 to get a fresh one.
 
 ---
 
-## 5. Token Caching
+## 6. Token Caching
 
 On each run, the app reads `.token_cache.json` and checks the expiry timestamp. If valid, no network call is made for authentication. If expired or absent, the app exits with instructions to run `--inject-token`.
 
@@ -85,7 +98,7 @@ On each run, the app reads `.token_cache.json` and checks the expiry timestamp. 
 
 ---
 
-## 6. Build a Portable Windows .exe
+## 7. Build a Portable Windows .exe
 
 ```bat
 pip install pyinstaller
@@ -97,7 +110,7 @@ Copy it alongside `config.json` — the config file must stay external so you ca
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
@@ -110,3 +123,5 @@ Copy it alongside `config.json` — the config file must stay external so you ca
 | `.exe` can't find `config.json` | Place `config.json` in the same folder as `costco-lookup.exe` |
 | `--download` saves file but doesn't open | Browser auto-open uses `webbrowser` stdlib; ensure a default browser is set in your OS |
 | `--download` Invoice column missing | Download runs before display; if column absent, no files were saved (check log for errors) |
+| Web UI shows blank page on macOS | Port 5000 is taken by AirPlay Receiver — use `python server.py --port 8080` (already the default) |
+| Web UI "No valid token" after injecting | Token saved to `.token_cache.json`; refresh the page to see updated status |
