@@ -80,12 +80,21 @@
 
 <div class="card">
   <div class="summary">
-    <strong>{{ results|length }} result(s)</strong> for item
-    <strong>{{ item_number }}</strong>
-    &mdash;
-    <strong>{{ online_count }}</strong> online,
-    <strong>{{ warehouse_count }}</strong> warehouse
-    &nbsp;(searched {{ years }} year{{ 's' if years != 1 else '' }})
+    {% if search_type == 'description' %}
+      <strong>{{ results|length }} result(s)</strong> for description
+      "<strong>{{ description_query }}</strong>"
+      &mdash;
+      <strong>{{ online_count }}</strong> online,
+      <strong>{{ warehouse_count }}</strong> warehouse
+      &nbsp;(searched {{ years }} year{{ 's' if years != 1 else '' }})
+    {% else %}
+      <strong>{{ results|length }} result(s)</strong> for item
+      <strong>#{{ item_number }}</strong>
+      &mdash;
+      <strong>{{ online_count }}</strong> online,
+      <strong>{{ warehouse_count }}</strong> warehouse
+      &nbsp;(searched {{ years }} year{{ 's' if years != 1 else '' }})
+    {% endif %}
   </div>
 
   {% if results %}
@@ -146,7 +155,11 @@
   </div>
   {% else %}
   <div class="empty-state">
-    No results found for item <strong>{{ item_number }}</strong> in the last {{ years }} year{{ 's' if years != 1 else '' }}.
+    {% if search_type == 'description' %}
+      No results found for description "<strong>{{ description_query }}</strong>" in the last {{ years }} year{{ 's' if years != 1 else '' }}.
+    {% else %}
+      No results found for item <strong>#{{ item_number }}</strong> in the last {{ years }} year{{ 's' if years != 1 else '' }}.
+    {% endif %}
   </div>
   {% endif %}
 </div>

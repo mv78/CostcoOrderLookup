@@ -2,18 +2,26 @@
 web.py — Flask app factory and all routes for Costco Order Lookup Web UI.
 """
 
+import json
 import logging
+import queue
+import secrets
+import threading
 
 import requests
-from flask import Flask, Response, flash, redirect, render_template, request, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, stream_with_context, url_for
 
 from costco_lookup import auth, config as cfg
 from costco_lookup.client import GraphQLClient
 from costco_lookup.downloader import _fetch_and_render_online, _fetch_and_render_warehouse
-from costco_lookup.orders import find_orders_by_item
+from costco_lookup.orders import find_orders_by_description, find_orders_by_item
 from costco_lookup.paths import TEMPLATE_DIR
 
 log = logging.getLogger(__name__)
+
+# Module-level result cache for SSE search results
+_result_cache: dict = {}
+_cache_lock = threading.Lock()
 
 
 def create_app() -> Flask:
@@ -70,50 +78,95 @@ def create_app() -> Flask:
     @app.route("/search")
     def search():
         item = (request.args.get("item") or "").strip()
-        years_raw = request.args.get("years", "5")
-        log.debug("GET /search item=%r years=%r", item, years_raw)
+        description = (request.args.get("description") or "").strip()
+        years = request.args.get("years", "5")
+        log.debug("GET /search item=%r description=%r years=%r", item, description, years)
 
-        if not item:
-            flash("Item number is required.", "error")
+        if not item and not description:
+            flash("Please enter an item number or description.", "warning")
             return redirect(url_for("index"))
 
+        return render_template("loading.html", item=item, description=description, years=years)
+
+    @app.route("/search/stream")
+    def search_stream():
+        item = (request.args.get("item") or "").strip()
+        description = (request.args.get("description") or "").strip()
         try:
-            years = int(years_raw)
+            years = int(request.args.get("years", 5))
         except (ValueError, TypeError):
             years = 5
+        log.debug("GET /search/stream item=%r description=%r years=%d", item, description, years)
 
-        try:
-            config = cfg.load_config()
-            token = auth.get_valid_token()
-            client = GraphQLClient(requests.Session(), config, token)
-        except RuntimeError as exc:
-            log.warning("search: client setup failed: %s", exc)
-            flash(str(exc), "error")
-            return redirect(url_for("index"))
-        except (FileNotFoundError, ValueError) as exc:
-            log.warning("search: config error: %s", exc)
-            flash(str(exc), "error")
-            return redirect(url_for("index"))
+        def generate():
+            q = queue.Queue()
+            search_id = secrets.token_hex(8)
 
-        try:
-            results = find_orders_by_item(
-                client,
-                item_number=item,
-                warehouse_number=config.get("warehouse_number", ""),
-                search_years=years,
-            )
-        except Exception as exc:
-            log.error("find_orders_by_item failed: %s", exc)
-            flash(f"Search failed: {exc}", "error")
-            return redirect(url_for("index"))
+            def on_progress(current, total, message):
+                q.put({"type": "progress", "current": current, "total": total, "message": message})
 
+            def run_search():
+                try:
+                    config = cfg.load_config()
+                    token = auth.get_valid_token()
+                    client = GraphQLClient(requests.Session(), config, token)
+                    warehouse_number = config.get("warehouse_number", "")
+                    if item:
+                        results = find_orders_by_item(
+                            client, item, warehouse_number, years, on_progress=on_progress
+                        )
+                        search_meta = {"type": "item", "query": item}
+                    else:
+                        results = find_orders_by_description(
+                            client, description, warehouse_number, years, on_progress=on_progress
+                        )
+                        search_meta = {"type": "description", "query": description}
+                    with _cache_lock:
+                        _result_cache[search_id] = {
+                            "results": results,
+                            "meta": search_meta,
+                            "years": years,
+                        }
+                    q.put({"type": "done", "search_id": search_id})
+                except RuntimeError as exc:
+                    q.put({"type": "error", "message": str(exc)})
+                except Exception as exc:
+                    log.error("run_search failed: %s", exc)
+                    q.put({"type": "error", "message": f"Search failed: {exc}"})
+
+            threading.Thread(target=run_search, daemon=True).start()
+
+            while True:
+                event = q.get()
+                yield f"data: {json.dumps(event)}\n\n"
+                if event["type"] in ("done", "error"):
+                    break
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.route("/search/results/<search_id>")
+    def search_results(search_id):
+        log.debug("GET /search/results/%s", search_id)
+        with _cache_lock:
+            cached = _result_cache.pop(search_id, None)
+        if cached is None:
+            flash("Search results expired or not found.", "warning")
+            return redirect(url_for("index"))
+        results = cached["results"]
+        meta = cached["meta"]
+        years = cached["years"]
         online_count = sum(1 for r in results if r.get("source") == "online")
         warehouse_count = sum(1 for r in results if r.get("source") == "warehouse")
-
         return render_template(
             "results.html",
             results=results,
-            item_number=item,
+            item_number=meta["query"] if meta["type"] == "item" else None,
+            description_query=meta["query"] if meta["type"] == "description" else None,
+            search_type=meta["type"],
             years=years,
             online_count=online_count,
             warehouse_count=warehouse_count,

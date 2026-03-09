@@ -20,12 +20,26 @@
 </div>
 
 <div class="card">
-  <h2>Search Orders by Item Number</h2>
+  <h2>Search Orders</h2>
   <form method="GET" action="/search">
+    <div class="search-toggle" style="margin-bottom:14px;">
+      <label style="display:inline;font-weight:500;margin-right:18px;">
+        <input type="radio" name="search_type" value="item" checked onchange="toggleSearchType(this.value)">
+        Item Number
+      </label>
+      <label style="display:inline;font-weight:500;">
+        <input type="radio" name="search_type" value="description" onchange="toggleSearchType(this.value)">
+        Product Description
+      </label>
+    </div>
     <div class="form-row">
-      <div>
+      <div id="item-input">
         <label for="item">Item Number</label>
-        <input type="text" id="item" name="item" placeholder="e.g. 1234567" required>
+        <input type="text" id="item" name="item" placeholder="e.g. 1234567">
+      </div>
+      <div id="desc-input" style="display:none;">
+        <label for="description">Description</label>
+        <input type="text" id="description" name="description" placeholder="e.g. kirkland olive oil">
       </div>
       <div style="max-width:160px;">
         <label for="years">Search Years</label>
@@ -39,6 +53,21 @@
       <button type="submit" class="btn btn-primary">Search</button>
     </div>
   </form>
+  <script>
+  function toggleSearchType(value) {
+    var itemDiv = document.getElementById('item-input');
+    var descDiv = document.getElementById('desc-input');
+    if (value === 'item') {
+      itemDiv.style.display = '';
+      descDiv.style.display = 'none';
+      document.getElementById('description').value = '';
+    } else {
+      itemDiv.style.display = 'none';
+      descDiv.style.display = '';
+      document.getElementById('item').value = '';
+    }
+  }
+  </script>
 </div>
 
 {% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="loading-container">
+  <h2>Searching...</h2>
+  <div class="progress-bar-track">
+    <div class="progress-bar-fill" id="progress-bar" style="width:0%"></div>
+  </div>
+  <div class="progress-labels">
+    <span id="progress-pct">0%</span>
+    <span id="progress-msg">Starting search...</span>
+  </div>
+</div>
+
+<style>
+.loading-container { max-width: 600px; margin: 80px auto; text-align: center; }
+.progress-bar-track { background: #e0e0e0; border-radius: 8px; height: 24px; overflow: hidden; margin: 24px 0 12px; }
+.progress-bar-fill { background: linear-gradient(90deg, #005596, #0073b1); height: 100%; border-radius: 8px; transition: width 0.4s ease; }
+.progress-labels { display: flex; justify-content: space-between; font-size: 14px; color: #555; }
+#progress-msg { max-width: 80%; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+
+<script>
+(function() {
+  var params = new URLSearchParams({
+    {% if item %}item: "{{ item }}",{% endif %}
+    {% if description %}description: "{{ description }}",{% endif %}
+    years: "{{ years }}"
+  });
+
+  var bar = document.getElementById('progress-bar');
+  var pctEl = document.getElementById('progress-pct');
+  var msgEl = document.getElementById('progress-msg');
+
+  var source = new EventSource('/search/stream?' + params.toString());
+
+  source.onmessage = function(e) {
+    var event = JSON.parse(e.data);
+    if (event.type === 'progress') {
+      var pct = event.total > 0 ? Math.round(event.current / event.total * 100) : 0;
+      bar.style.width = pct + '%';
+      pctEl.textContent = pct + '%';
+      msgEl.textContent = event.message;
+    } else if (event.type === 'done') {
+      source.close();
+      bar.style.width = '100%';
+      pctEl.textContent = '100%';
+      msgEl.textContent = 'Done!';
+      setTimeout(function() {
+        window.location.href = '/search/results/' + event.search_id;
+      }, 300);
+    } else if (event.type === 'error') {
+      source.close();
+      bar.style.background = '#c0392b';
+      pctEl.textContent = '';
+      msgEl.textContent = 'Error: ' + event.message;
+    }
+  };
+
+  source.onerror = function() {
+    source.close();
+    msgEl.textContent = 'Connection lost. Please try again.';
+  };
+})();
+</script>
+{% endblock %}

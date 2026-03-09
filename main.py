@@ -10,6 +10,7 @@ Usage:
   python main.py --item 1900477 --output csv
   python main.py --item 1900477 --years 10       # Search further back (default: 5)
   python main.py --item 1900477 --debug          # Verbose logging to console
+  python main.py --description "kirkland olive"  # Search by product description
 
 Logs are always written to costco_lookup.log (DEBUG level).
 Pass --debug to also print DEBUG messages to the terminal.
@@ -20,6 +21,13 @@ import logging
 import sys
 
 import requests
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+)
 
 from costco_lookup.logger import setup_logging
 from costco_lookup import config as cfg
@@ -53,12 +61,26 @@ def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: b
     client = GraphQLClient(session, config, token)
 
     try:
-        order_list = ord_mod.find_orders_by_item(
-            client,
-            item_number=item_number,
-            warehouse_number=config["warehouse_number"],
-            search_years=search_years,
-        )
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn("{task.percentage:>3.0f}%"),
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Searching...", total=None)
+
+            def on_progress(current, total, message):
+                progress.update(task, completed=current, total=total, description=message)
+
+            order_list = ord_mod.find_orders_by_item(
+                client,
+                item_number=item_number,
+                warehouse_number=config["warehouse_number"],
+                search_years=search_years,
+                on_progress=on_progress,
+            )
     except Exception as exc:
         log.exception("Order lookup failed")
         print(f"[error] {exc}")
@@ -70,6 +92,83 @@ def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: b
     if download:
         from costco_lookup import downloader
         saved = downloader.download_documents(order_list, client, item_number)
+
+    if output_format == "json":
+        display.print_json(order_list)
+    elif output_format == "csv":
+        display.print_csv(order_list)
+    else:
+        display.print_table(order_list)
+
+    if download:
+        if saved:
+            import webbrowser
+            print(f"\nDownloaded {len(saved)} file(s) to: {downloader.INVOICES_DIR}")
+            for p in saved:
+                print(f"  {p.name}")
+                webbrowser.open(p.as_uri())
+
+
+def cmd_lookup_by_description(
+    description_query: str,
+    output_format: str,
+    search_years: int,
+    debug: bool,
+    download: bool = False,
+) -> None:
+    setup_logging(debug)
+    log.info("Description lookup started: query=%r format=%s years=%d download=%s",
+             description_query, output_format, search_years, download)
+
+    try:
+        config = cfg.load_config()
+    except (FileNotFoundError, ValueError) as exc:
+        log.error("Config load failed: %s", exc)
+        print(f"[error] {exc}")
+        sys.exit(1)
+
+    try:
+        token = auth.get_valid_token()
+    except RuntimeError as exc:
+        log.exception("Failed to obtain auth token")
+        print(f"[error] {exc}")
+        sys.exit(1)
+
+    session = _make_session()
+    client = GraphQLClient(session, config, token)
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn("{task.percentage:>3.0f}%"),
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Searching...", total=None)
+
+            def on_progress(current, total, message):
+                progress.update(task, completed=current, total=total, description=message)
+
+            order_list = ord_mod.find_orders_by_description(
+                client,
+                description_query=description_query,
+                warehouse_number=config["warehouse_number"],
+                search_years=search_years,
+                on_progress=on_progress,
+            )
+    except Exception as exc:
+        log.exception("Description lookup failed")
+        print(f"[error] {exc}")
+        print(f"  Check costco_lookup.log for details.")
+        sys.exit(1)
+
+    log.info("Description lookup complete: %d result(s) for %r", len(order_list), description_query)
+
+    if download:
+        from costco_lookup import downloader
+        saved = downloader.download_documents(order_list, client, description_query)
 
     if output_format == "json":
         display.print_json(order_list)
@@ -161,13 +260,18 @@ def _make_session() -> requests.Session:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="costco-lookup",
-        description="Look up past Costco orders and warehouse receipts by item number.",
+        description="Look up past Costco orders and warehouse receipts by item number or description.",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--item",
         metavar="ITEM_NUMBER",
         help="Costco item number to search for.",
+    )
+    group.add_argument(
+        "--description",
+        metavar="TEXT",
+        help="Search orders by product description (partial match).",
     )
     group.add_argument(
         "--inject-token",
@@ -209,6 +313,8 @@ def main() -> None:
 
     if args.item:
         cmd_lookup(args.item, args.output, args.years, args.debug, args.download)
+    elif args.description:
+        cmd_lookup_by_description(args.description, args.output, args.years, args.debug, args.download)
     elif args.inject_token is not None:
         token_val = None if args.inject_token == "__prompt__" else args.inject_token
         cmd_inject_token(token_val, args.debug)

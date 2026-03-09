@@ -2,10 +2,10 @@
 
 ## Overview
 
-Costco Order Lookup is a Python CLI and local web application that searches Costco order history by item number, spanning both online orders and in-warehouse receipts across multiple years. Authentication relies exclusively on a Bearer token manually copied from Chrome DevTools; Costco's bot-protection blocks all automated login flows.
+Costco Order Lookup is a Python CLI and local web application that searches Costco order history by item number **or product description**, spanning both online orders and in-warehouse receipts across multiple years. Authentication relies exclusively on a Bearer token manually copied from Chrome DevTools; Costco's bot-protection blocks all automated login flows.
 
 Two entry points share the same core modules:
-- **`main.py`** — CLI (`--item`, `--inject-token`, `--download`)
+- **`main.py`** — CLI (`--item`, `--description`, `--inject-token`, `--download`)
 - **`server.py`** — Flask web UI on `localhost:8080` (default)
 
 ---
@@ -22,16 +22,18 @@ Two entry points share the same core modules:
 │           main.py            │   │          server.py           │
 │  build_parser()              │   │  argparse --port (def 8080)  │
 │  cmd_lookup()   --item       │   │  create_app()                │
-│                 --download   │   │  webbrowser.open()           │
-│  cmd_inject_token()          │   └──────────────┬───────────────┘
-└──────┬───────────────────────┘                  │
-       │                                          ▼
+│  cmd_lookup_by_description() │   │  webbrowser.open()           │
+│                 --download   │   └──────────────┬───────────────┘
+│  cmd_inject_token()          │                  │
+└──────┬───────────────────────┘                  ▼
        │                          ┌──────────────────────────────┐
        │                          │          web.py              │
        │                          │  Flask app factory           │
        │                          │  GET  /                      │
        │                          │  POST /inject-token          │
-       │                          │  GET  /search                │
+       │                          │  GET  /search          (→ loading.html)
+       │                          │  GET  /search/stream   (SSE)
+       │                          │  GET  /search/results/<id>
        │                          │  GET  /receipt/<barcode>     │
        │                          │  GET  /order/<order_number>  │
        └──────────────────────────┴──────────────────────────────┘
@@ -65,13 +67,20 @@ Two entry points share the same core modules:
                           │ HTTP POST (requests.Session)
                           ▼
               ┌────────────────────────┐
-              │   orders.py            │
-              │                        │
-              │ find_orders_by_item()  │
-              │  ├─ _build_date_chunks │
-              │  ├─ _fetch_online_orders (paginated)
-              │  └─ _fetch_receipts    │
-              └───────────┬────────────┘
+              │   orders.py                        │
+              │                                    │
+              │ find_orders_by_item()              │
+              │  ├─ _build_date_chunks             │
+              │  ├─ _fetch_online_orders (paged)   │
+              │  └─ _fetch_receipts                │
+              │                                    │
+              │ find_orders_by_description()       │
+              │  ├─ _build_date_chunks             │
+              │  ├─ _fetch_online_orders_by_desc   │
+              │  ├─ _fetch_receipt_summaries       │
+              │  └─ _fetch_receipt_detail_by_desc  │
+              │       (per receipt, all fetched)   │
+              └───────────┬────────────────────────┘
                           │ GraphQL POST ×N chunks
                           ▼
               ┌────────────────────────┐
@@ -127,19 +136,20 @@ Two entry points share the same core modules:
    └─ Stores: endpoint, headers template, token
       │
       ▼
-5. orders.find_orders_by_item()
+5. orders.find_orders_by_item(..., on_progress=cb)
    │
    ├─ _build_date_chunks(search_years)
    │   └─ [today-6mo..today], [today-12mo..today-6mo], … (6-month windows)
+   │   total = len(chunks) × 2
    │
-   └─ For each chunk:
-       ├─ _fetch_online_orders(client, item, warehouse, start, end)
+   └─ For each chunk (calls on_progress after each):
+       ├─ _fetch_online_orders(client, item, warehouse, start, end, ...)
        │   ├─ page = 1, loop until fetched >= total
        │   ├─ client.execute(GET_ONLINE_ORDERS_QUERY, vars)
        │   │   └─ HTTP POST → ecom-api.costco.com/graphql
        │   └─ filter bcOrders where orderLineItems[*].itemNumber == item
        │
-       └─ _fetch_receipts(client, item, start, end)
+       └─ _fetch_receipts(client, item, start, end, ...)
            ├─ client.execute(RECEIPTS_WITH_COUNTS_QUERY, vars)
            │   └─ HTTP POST → ecom-api.costco.com/graphql
            └─ filter receipts where itemArray[*].itemNumber == item
@@ -161,6 +171,81 @@ Two entry points share the same core modules:
    │
    └─ Write BASE_DIR/invoices/{item}_{source}_{id}_{date}.html
       (skips existing files; logs warning on per-record failure)
+```
+
+---
+
+## Data Flow: Description Search (`--description`)
+
+```
+1–4. Same as Item Lookup (config → token → GraphQLClient)
+      │
+      ▼
+5. orders.find_orders_by_description(query, ..., on_progress=cb)
+   │
+   ├─ _build_date_chunks(search_years)
+   │   Phase 1 total = len(chunks) × 2
+   │
+   ├─ Phase 1a — Online orders (per chunk):
+   │   _fetch_online_orders_by_description(client, query, warehouse, start, end)
+   │   ├─ Fetch ALL online orders (full pagination, no item filter)
+   │   └─ Filter: query.lower() in itemDescription.lower()
+   │   on_progress(++current, phase1_total, msg) after each chunk
+   │
+   ├─ Phase 1b — Receipt summaries (per chunk):
+   │   _fetch_receipt_summaries(client, start, end, warehouse)
+   │   ├─ RECEIPTS_WITH_COUNTS_QUERY — returns all receipts, no filter
+   │   └─ Collect all_receipts list
+   │   on_progress(++current, phase1_total, msg) after each chunk
+   │
+   │   ← at this point all_receipts count is known
+   │   total updated: phase1_total + len(all_receipts)
+   │
+   └─ Phase 2 — Receipt details (per receipt):
+       _fetch_receipt_detail_by_description(client, receipt, query)
+       ├─ RECEIPT_DETAIL_QUERY → itemArray with itemDescription01/02
+       ├─ Filter: query.lower() in (desc01 + " " + desc02).lower()
+       └─ Returns normalized record or None
+       on_progress(++current, updated_total, msg) after each receipt
+      │
+      ▼
+6–8. Same merge/sort/display/download as Item Lookup
+```
+
+**Performance note:** Phase 2 issues one `RECEIPT_DETAIL_QUERY` per receipt in the date range regardless of match. For 5 years of history this is typically 50–200 HTTP calls. Progress percentage reflects this cost accurately.
+
+---
+
+## Data Flow: Web Search with SSE Progress
+
+```
+Browser                     Flask (web.py)              orders.py
+   │                              │                          │
+   ├─ GET /search?item=X ────────►│                          │
+   │                              ├─ return loading.html     │
+   │◄──── loading.html ───────────┤                          │
+   │                              │                          │
+   ├─ EventSource /search/stream ►│                          │
+   │                              ├─ Thread: run_search()    │
+   │                              │    ├─ find_orders_by_*() │
+   │◄── data: {progress,5,20} ────┤◄── on_progress(5,20,msg)─┤
+   │◄── data: {progress,10,45} ───┤◄── on_progress(10,45,…) ─┤
+   │      (total grows as        │    │  (receipt count known)│
+   │       receipts are counted) │    │                       │
+   │◄── data: {done, search_id} ──┤    └─ results stored in   │
+   │                              │       _result_cache[id]   │
+   ├─ GET /search/results/<id> ──►│                          │
+   │◄── results.html ─────────────┤ pop from cache + render  │
+```
+
+**Result cache:** `_result_cache: dict` at module level in `web.py`, protected by `threading.Lock()`. Entry is single-use — popped on first read. `search_id = secrets.token_hex(8)`.
+
+**SSE event schema:**
+
+```json
+{"type": "progress", "current": 10, "total": 45, "message": "Checking receipt 2023-06-14..."}
+{"type": "done",     "search_id": "a3f9c1b2"}
+{"type": "error",    "message":   "Token expired. Run --inject-token."}
 ```
 
 ---
@@ -219,12 +304,12 @@ Azure AD B2C uses **rotating refresh tokens** — each successful refresh invali
 
 | Module | File | Responsibility |
 |--------|------|----------------|
-| `main` | `main.py` | CLI entry point; `build_parser()`, `cmd_lookup()`, `cmd_inject_token()` |
+| `main` | `main.py` | CLI entry point; `build_parser()`, `cmd_lookup()`, `cmd_lookup_by_description()`, `cmd_inject_token()` |
 | `server` | `server.py` | Web UI entry point; starts Flask on `localhost:PORT`, auto-opens browser |
-| `web` | `costco_lookup/web.py` | Flask app factory; 5 routes; reuses core modules directly |
+| `web` | `costco_lookup/web.py` | Flask app factory; 7 routes; SSE progress stream; in-memory result cache |
 | `auth` | `costco_lookup/auth.py` | Token cache: load, save, inject, validate expiry; auto-refresh via Azure AD B2C refresh token |
 | `client` | `costco_lookup/client.py` | `GraphQLClient`: HTTP POST with Costco headers; 401 → RuntimeError |
-| `orders` | `costco_lookup/orders.py` | GraphQL query strings; date chunking; search orchestration; response parsing |
+| `orders` | `costco_lookup/orders.py` | GraphQL query strings; date chunking; `find_orders_by_item()` and `find_orders_by_description()`; `on_progress` callback protocol |
 | `display` | `costco_lookup/display.py` | Output: rich table, JSON, CSV; Invoice column when `--download` used |
 | `downloader` | `costco_lookup/downloader.py` | HTML rendering for receipts/invoices; used by CLI `--download` and web `/receipt`, `/order` routes |
 | `config` | `costco_lookup/config.py` | `load_config()` / `save_config()`: merge defaults, validate |
@@ -243,9 +328,11 @@ Flask runs on `127.0.0.1:PORT` (localhost only). On startup, `webbrowser.open()`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | Index — token status banner, token injection form (+ optional refresh token), search form |
+| `GET` | `/` | Index — token status banner, token injection form (+ optional refresh token), search form with item/description toggle |
 | `POST` | `/inject-token` | Calls `auth.inject_token(token, refresh_token=...)`; redirects to `/` |
-| `GET` | `/search?item=X&years=N` | Runs `orders.find_orders_by_item()`; renders results table |
+| `GET` | `/search` | Returns `loading.html` immediately; accepts `item=` or `description=` + `years=` |
+| `GET` | `/search/stream` | SSE endpoint; runs `find_orders_by_item` or `find_orders_by_description` in a daemon thread; streams progress/done/error events |
+| `GET` | `/search/results/<search_id>` | Pops results from `_result_cache`; renders `results.html`; 404-redirects if cache miss |
 | `GET` | `/receipt/<barcode>` | Fetches warehouse receipt via `RECEIPT_DETAIL_QUERY`; returns full HTML (new tab) |
 | `GET` | `/order/<order_number>` | Fetches online order via `ORDER_DETAIL_QUERY`; returns full HTML (new tab) |
 
@@ -363,6 +450,22 @@ Both queries run for every chunk. Results from all chunks are merged and sorted 
 
 A failed chunk (e.g., network error) is logged as a warning and skipped; the rest still complete.
 
+### Description search chunking
+
+`find_orders_by_description()` uses the same 6-month chunks. Phase 1 (online + receipt summaries) runs per-chunk. Phase 2 (receipt detail fetches) runs once across all receipts collected from Phase 1 — the receipt count is not known until Phase 1 completes, so the progress `total` is updated mid-stream after Phase 1 finishes.
+
+### Progress callback protocol
+
+Both public search functions accept `on_progress=None`:
+
+```python
+on_progress(current: int, total: int, message: str) -> None
+```
+
+- `None` → no-op (backward compatible — existing callers unaffected)
+- CLI: Rich `Progress` bar supplied as the callback
+- Web: enqueues JSON dict into a `queue.Queue`; SSE generator drains the queue
+
 ---
 
 ## File Layout at Runtime
@@ -378,8 +481,9 @@ BASE_DIR/
 # Web UI templates (bundled into .exe via build.spec datas)
 BASE_DIR/costco_lookup/templates/
 ├── base.html             ← nav, token banner, flash messages, inline CSS
-├── index.html            ← token injection form + search form
-└── results.html          ← rich results table with source/status badges
+├── index.html            ← token injection form + search form (item/description toggle)
+├── loading.html          ← animated progress bar; EventSource JS → /search/stream
+└── results.html          ← rich results table; handles both item and description search types
 ```
 
 **Path resolution (`paths.py`):**
