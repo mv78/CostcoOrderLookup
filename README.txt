@@ -2,14 +2,16 @@ COSTCO ORDER LOOKUP
 ===================
 
 Search your entire Costco order history -- both online orders and in-warehouse
-receipts -- by item number. Results display in a table, JSON, or CSV.
+receipts -- by item number or product description (full or partial match).
+Results display in a table, JSON, or CSV.
 
 
 QUICK START
 -----------
 
-  python main.py --inject-token    (paste token from Chrome -- see below)
-  python main.py --item 1900477    (search for item)
+  python main.py --inject-token              (paste token from Chrome -- see below)
+  python main.py --item 1900477              (search by item number)
+  python main.py --description "tires"       (search by product description)
 
 
 ================================================================
@@ -104,14 +106,16 @@ Option 3 -- Mac / Linux
 USAGE
 ================================================================
 
-  python main.py --inject-token              Save token from Chrome DevTools
-  python main.py --item ITEM_NUMBER          Search by Costco item number
+  python main.py --inject-token                      Save token from Chrome DevTools
+  python main.py --inject-token "eyJ..."             Inject token inline
+  python main.py --item ITEM_NUMBER                  Search by Costco item number
+  python main.py --description "kirkland tires"      Search by product description (partial match)
   python main.py --item ITEM_NUMBER --output json
   python main.py --item ITEM_NUMBER --output csv
-  python main.py --item ITEM_NUMBER --years 10   Search further back (default: 5 years)
-  python main.py --refresh-token             Force re-authentication
-  python main.py --setup                     First-time setup wizard
-  python main.py --debug                     Verbose logging to terminal
+  python main.py --item ITEM_NUMBER --years 10       Search further back (default: 5 years)
+  python main.py --description "tires" --years 3     Description search with custom range
+  python main.py --item ITEM_NUMBER --debug          Verbose logging to terminal
+  python main.py --item ITEM_NUMBER --download       Save HTML receipts and open in browser
 
 
 OUTPUT COLUMNS
@@ -175,8 +179,6 @@ Locally on Windows:
 SECURITY NOTES
 ================================================================
 
-  - Credentials are stored in the OS keyring (Windows Credential Manager /
-    macOS Keychain) -- never in plain text files
   - Tokens are cached in .token_cache.json which is gitignored
   - HAR files from Chrome contain sensitive data -- never commit them
   - config.json contains endpoint URLs and your warehouse number -- no secrets

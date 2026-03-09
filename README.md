@@ -1,6 +1,6 @@
 # Costco Order Lookup
 
-Search your entire Costco order history — both online orders and in-warehouse receipts — by item number. Results display in a rich table, JSON, or CSV.
+Search your entire Costco order history — both online orders and in-warehouse receipts — by **item number** or **product description** (full or partial match). Results display in a rich table, JSON, or CSV.
 
 ---
 
@@ -8,8 +8,9 @@ Search your entire Costco order history — both online orders and in-warehouse 
 
 **CLI:**
 ```
-python main.py --inject-token    # paste token from Chrome (see below)
-python main.py --item 1900477    # search for item
+python main.py --inject-token          # paste token from Chrome (see below)
+python main.py --item 1900477          # search by item number
+python main.py --description "tires"   # search by product description
 ```
 
 **Web UI:**
@@ -112,14 +113,16 @@ python main.py --item 1900477
 
 **CLI:**
 ```
-python main.py --inject-token            # save token from Chrome DevTools
-python main.py --inject-token "eyJ..."  # inject token inline
-python main.py --item ITEM_NUMBER        # search by Costco item number
+python main.py --inject-token                      # save token from Chrome DevTools
+python main.py --inject-token "eyJ..."             # inject token inline
+python main.py --item ITEM_NUMBER                  # search by Costco item number
+python main.py --description "kirkland olive oil"  # search by product description (partial match)
 python main.py --item ITEM_NUMBER --output json
 python main.py --item ITEM_NUMBER --output csv
-python main.py --item ITEM_NUMBER --years 10     # search further back (default: 5)
-python main.py --item ITEM_NUMBER --debug        # verbose logging to terminal
-python main.py --item ITEM_NUMBER --download     # save HTML receipts/invoices and open in browser
+python main.py --item ITEM_NUMBER --years 10       # search further back (default: 5)
+python main.py --description "tires" --years 3     # description search with custom range
+python main.py --item ITEM_NUMBER --debug          # verbose logging to terminal
+python main.py --item ITEM_NUMBER --download       # save HTML receipts/invoices and open in browser
 ```
 
 **Web UI:**
@@ -138,7 +141,7 @@ The web UI provides a browser-based interface for token injection, order search,
 | Date | Order placed / receipt date |
 | Order/Receipt ID | Order number or receipt barcode |
 | Item # | Costco item number |
-| Description | Item name (online orders only) |
+| Description | Item name (online orders; warehouse receipts when using `--description` search) |
 | Status | Delivered, Shipped, Purchased, etc. |
 | Order Total | Total for the order or receipt |
 | Warehouse | Warehouse number (online) or name (warehouse) |
@@ -300,9 +303,10 @@ CostcoOrderLookup/
 │   ├── paths.py        # BASE_DIR for script and .exe modes
 │   ├── web.py          # Flask app factory + all web routes
 │   └── templates/
-│       ├── base.html   # nav, token banner, inline CSS
-│       ├── index.html  # token injection + search form
-│       └── results.html# rich results table
+│       ├── base.html      # nav, token banner, inline CSS
+│       ├── index.html     # token injection + search form (item/description toggle)
+│       ├── loading.html   # animated progress bar + SSE EventSource JS
+│       └── results.html   # rich results table (item and description search)
 ├── .github/
 │   └── workflows/
 │       └── build-windows.yml   # automated Windows .exe build
