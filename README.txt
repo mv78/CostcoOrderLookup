@@ -130,6 +130,15 @@ capitalisation.
   "2 pack"    matches  2-Pack, 2 Pack Batteries
 
 
+SEARCH PERFORMANCE
+--------------------
+Both item and description searches run in parallel using ThreadPoolExecutor
+(Python stdlib -- no extra dependencies). All 6-month date chunks are fetched
+concurrently (up to 5 workers). For description searches, the receipt detail
+phase runs with up to 8 concurrent workers. A 5-year search that previously
+took several minutes now completes significantly faster.
+
+
 OUTPUT COLUMNS
 --------------
   Source          online = costco.com order | warehouse = in-store receipt

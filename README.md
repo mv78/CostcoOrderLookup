@@ -145,6 +145,10 @@ Description search uses **partial, punctuation-insensitive matching**. Before co
 
 This means you never need to worry about apostrophes, hyphens, or capitalisation when searching.
 
+### Search performance
+
+Both item and description searches run **in parallel** using `ThreadPoolExecutor`. All 6-month date chunks are fetched concurrently (up to 5 workers), and for description searches the warehouse receipt detail phase runs with up to 8 concurrent workers. A 5-year search that previously took several minutes now completes significantly faster.
+
 ### Output columns
 
 | Column | Description |

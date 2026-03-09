@@ -309,7 +309,7 @@ Azure AD B2C uses **rotating refresh tokens** — each successful refresh invali
 | `web` | `costco_lookup/web.py` | Flask app factory; 7 routes; SSE progress stream; in-memory result cache |
 | `auth` | `costco_lookup/auth.py` | Token cache: load, save, inject, validate expiry; auto-refresh via Azure AD B2C refresh token |
 | `client` | `costco_lookup/client.py` | `GraphQLClient`: HTTP POST with Costco headers; 401 → RuntimeError |
-| `orders` | `costco_lookup/orders.py` | GraphQL query strings; date chunking; `find_orders_by_item()` and `find_orders_by_description()`; `on_progress` callback protocol |
+| `orders` | `costco_lookup/orders.py` | GraphQL query strings; date chunking; `find_orders_by_item()` and `find_orders_by_description()`; parallel chunk execution via `ThreadPoolExecutor`; `on_progress` callback protocol |
 | `display` | `costco_lookup/display.py` | Output: rich table, JSON, CSV; Invoice column when `--download` used |
 | `downloader` | `costco_lookup/downloader.py` | HTML rendering for receipts/invoices; used by CLI `--download` and web `/receipt`, `/order` routes |
 | `config` | `costco_lookup/config.py` | `load_config()` / `save_config()`: merge defaults, validate |
@@ -450,9 +450,49 @@ Both queries run for every chunk. Results from all chunks are merged and sorted 
 
 A failed chunk (e.g., network error) is logged as a warning and skipped; the rest still complete.
 
+### Parallelization
+
+All chunk fetches are **independent** — no result depends on another within the same phase. Both public search functions use `concurrent.futures.ThreadPoolExecutor` (stdlib, no new dependency) to run chunks concurrently.
+
+**`find_orders_by_item`** — a single pool submits all `len(chunks) × 2` tasks (online + receipt per chunk) at once:
+
+```
+ThreadPoolExecutor(max_workers=min(total_tasks, 5))
+  ├── _fetch_online_chunk(chunk 1) ──┐
+  ├── _fetch_receipt_chunk(chunk 1) ─┤
+  ├── _fetch_online_chunk(chunk 2) ──┼─ collected via as_completed()
+  ├── _fetch_receipt_chunk(chunk 2) ─┤
+  └── …                             ┘
+```
+
+**`find_orders_by_description`** — two sequential pools:
+
+```
+Pool 1 (max 5 workers) — Phase 1: online desc chunks + receipt summary chunks
+  └── all complete → all_receipt_summaries known → Phase 2 total calculated
+
+Pool 2 (max 8 workers) — Phase 2: one task per receipt detail fetch
+  └── results filtered by description, appended to results list
+```
+
+**Thread safety:**
+- Each worker creates its own `requests.Session` + `GraphQLClient` via `_make_client(token, config)` — avoids shared session state
+- `on_progress` is wrapped in a `threading.Lock` + shared counter list before being passed to workers
+- Results are collected from `as_completed()` in the main thread — no concurrent list writes
+
+**Worker caps:**
+
+| Pool | `max_workers` | Rationale |
+|------|--------------|-----------|
+| Item search | `min(chunks × 2, 5)` | Balanced API load; typically 10 chunks = 20 tasks |
+| Description Phase 1 | `min(chunks × 2, 5)` | Same |
+| Description Phase 2 | `min(len(receipts), 8)` | Bigger win here; 8 caps concurrent detail fetches |
+
+**Why not reactive streams / asyncio:** `requests` is synchronous; adapting to `asyncio` would require replacing the HTTP stack (`httpx`/`aiohttp`) and rewriting all callers. `ThreadPoolExecutor` achieves the same parallelism with zero new dependencies and no architectural disruption.
+
 ### Description search chunking
 
-`find_orders_by_description()` uses the same 6-month chunks. Phase 1 (online + receipt summaries) runs per-chunk. Phase 2 (receipt detail fetches) runs once across all receipts collected from Phase 1 — the receipt count is not known until Phase 1 completes, so the progress `total` is updated mid-stream after Phase 1 finishes.
+`find_orders_by_description()` uses the same 6-month chunks. Phase 1 (online + receipt summaries) runs in parallel across all chunks in a single pool. Phase 2 (receipt detail fetches) runs in a second parallel pool after Phase 1 completes — the receipt count is not known until Phase 1 finishes, so the progress `total` is updated before Phase 2 begins.
 
 ### Description matching — normalization
 
