@@ -109,13 +109,25 @@ USAGE
   python main.py --inject-token                      Save token from Chrome DevTools
   python main.py --inject-token "eyJ..."             Inject token inline
   python main.py --item ITEM_NUMBER                  Search by Costco item number
-  python main.py --description "kirkland tires"      Search by product description (partial match)
+  python main.py --description "kirkland tires"      Search by description (partial, punctuation-insensitive)
   python main.py --item ITEM_NUMBER --output json
   python main.py --item ITEM_NUMBER --output csv
   python main.py --item ITEM_NUMBER --years 10       Search further back (default: 5 years)
   python main.py --description "tires" --years 3     Description search with custom range
   python main.py --item ITEM_NUMBER --debug          Verbose logging to terminal
   python main.py --item ITEM_NUMBER --download       Save HTML receipts and open in browser
+
+
+DESCRIPTION SEARCH MATCHING
+-----------------------------
+Description search uses partial, punctuation-insensitive matching. Both your
+query and the item description are lowercased and stripped of punctuation
+before comparing, so you never need to worry about apostrophes, hyphens, or
+capitalisation.
+
+  "delonghi"  matches  De'Longhi, DeLonghi Espresso
+  "kirkland"  matches  Kirkland's Signature, Kirkland Olive Oil
+  "2 pack"    matches  2-Pack, 2 Pack Batteries
 
 
 OUTPUT COLUMNS

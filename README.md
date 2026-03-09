@@ -116,7 +116,7 @@ python main.py --item 1900477
 python main.py --inject-token                      # save token from Chrome DevTools
 python main.py --inject-token "eyJ..."             # inject token inline
 python main.py --item ITEM_NUMBER                  # search by Costco item number
-python main.py --description "kirkland olive oil"  # search by product description (partial match)
+python main.py --description "kirkland olive oil"  # search by product description (partial, punctuation-insensitive)
 python main.py --item ITEM_NUMBER --output json
 python main.py --item ITEM_NUMBER --output csv
 python main.py --item ITEM_NUMBER --years 10       # search further back (default: 5)
@@ -132,6 +132,18 @@ python server.py --port 9000     # use a custom port
 ```
 
 The web UI provides a browser-based interface for token injection, order search, and viewing receipts/invoices inline in a new tab — no command line required.
+
+### Description search matching
+
+Description search uses **partial, punctuation-insensitive matching**. Before comparing, both your query and the item description are lowercased and stripped of all punctuation characters.
+
+| You type | Matches |
+|----------|---------|
+| `delonghi` | "De'Longhi", "DeLonghi Espresso" |
+| `kirkland` | "Kirkland's Signature", "Kirkland Olive Oil" |
+| `2 pack` | "2-Pack", "2 Pack Batteries" |
+
+This means you never need to worry about apostrophes, hyphens, or capitalisation when searching.
 
 ### Output columns
 

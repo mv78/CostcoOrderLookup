@@ -454,6 +454,24 @@ A failed chunk (e.g., network error) is logged as a warning and skipped; the res
 
 `find_orders_by_description()` uses the same 6-month chunks. Phase 1 (online + receipt summaries) runs per-chunk. Phase 2 (receipt detail fetches) runs once across all receipts collected from Phase 1 — the receipt count is not known until Phase 1 completes, so the progress `total` is updated mid-stream after Phase 1 finishes.
 
+### Description matching — normalization
+
+Both the search query and item descriptions are normalized before comparison via `_normalize()` in `orders.py`:
+
+```python
+_PUNCT_TABLE = str.maketrans("", "", string.punctuation)
+
+def _normalize(text: str) -> str:
+    return (text or "").lower().translate(_PUNCT_TABLE)
+```
+
+This strips all `string.punctuation` characters (`` !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~ ``) and lowercases the result. Raw descriptions are stored in result records unchanged — normalization is applied only at match time.
+
+**Examples:**
+- Query `"delonghi"` matches `"De'Longhi"` → normalized: `delonghi`
+- Query `"kirkland"` matches `"Kirkland's Signature"` → normalized: `kirklands signature`
+- Query `"2 pack"` matches `"2-Pack"` → normalized: `2pack`
+
 ### Progress callback protocol
 
 Both public search functions accept `on_progress=None`:
