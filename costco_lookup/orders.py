@@ -9,6 +9,7 @@ Search strategy:
 """
 
 import logging
+import string
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import Any, Optional
@@ -16,6 +17,8 @@ from typing import Any, Optional
 from .client import GraphQLClient
 
 log = logging.getLogger(__name__)
+
+_PUNCT_TABLE = str.maketrans("", "", string.punctuation)
 
 DEFAULT_SEARCH_YEARS = 5
 
@@ -249,7 +252,7 @@ def find_orders_by_description(
     """
     results: list[dict] = []
     date_chunks = _build_date_chunks(search_years)
-    needle = description_query.lower()
+    needle = _normalize(description_query)
 
     # Phase 1 total: online chunks + receipt summary chunks
     phase1_total = len(date_chunks) * 2
@@ -404,7 +407,7 @@ def _fetch_online_orders_by_description(
         for order in orders:
             for line in (order.get("orderLineItems") or []):
                 desc = str(line.get("itemDescription", ""))
-                if needle in desc.lower():
+                if needle in _normalize(desc):
                     item_num = str(line.get("itemNumber", "—"))
                     record = _build_online_record(order, line, item_num)
                     log.debug("Desc match: order_id=%s item=%s desc=%s",
@@ -569,9 +572,9 @@ def _fetch_receipt_detail_by_description(
     matched_item = None
     matched_item_number = None
     for item in item_array:
-        full_desc = (
+        full_desc = _normalize(
             (item.get("itemDescription01") or "") + " " + (item.get("itemDescription02") or "")
-        ).strip().lower()
+        )
         if needle in full_desc:
             matched_item = item
             matched_item_number = str(item.get("itemNumber", "—"))
@@ -609,6 +612,11 @@ def _fetch_receipt_detail_by_description(
 # ---------------------------------------------------------------------------
 # Date helpers
 # ---------------------------------------------------------------------------
+
+def _normalize(text: str) -> str:
+    """Lowercase and strip punctuation for fuzzy description matching."""
+    return (text or "").lower().translate(_PUNCT_TABLE)
+
 
 def _build_date_chunks(years: int) -> list[tuple[date, date]]:
     """Build list of (start, end) 6-month chunks from today back `years` years."""
