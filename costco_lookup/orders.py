@@ -10,6 +10,8 @@ Search strategy:
 
 import logging
 import string
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import Any, Optional
@@ -184,6 +186,8 @@ def find_orders_by_item(
     warehouse_number: str,
     search_years: int = DEFAULT_SEARCH_YEARS,
     on_progress=None,
+    token: str = "",
+    config: dict = None,
 ) -> list[dict]:
     """
     Search both online orders and in-warehouse receipts for the given item.
@@ -191,39 +195,48 @@ def find_orders_by_item(
 
     on_progress: optional callable(current, total, message) — called after
     each chunk is processed. If None, behaviour is identical to before.
+
+    token/config: when provided, each worker thread creates its own GraphQLClient
+    (thread-safe). Falls back to the shared client when omitted.
     """
     results: list[dict] = []
     date_chunks = _build_date_chunks(search_years)
-    total = len(date_chunks) * 2
-    log.info("Searching item %s over %d year(s) in %d date chunks",
-             item_number, search_years, len(date_chunks))
+    total_tasks = len(date_chunks) * 2
+    log.info("Searching item %s over %d year(s) in %d date chunks (%d parallel tasks)",
+             item_number, search_years, len(date_chunks), total_tasks)
 
-    # --- Online orders ---
-    log.info("Searching online orders…")
-    online_total = 0
-    for idx, (start, end) in enumerate(date_chunks):
-        chunk = _fetch_online_orders(
-            client, item_number, warehouse_number, start, end,
-            on_progress=on_progress, progress_current=idx, progress_total=total,
-        )
-        online_total += len(chunk)
-        results.extend(chunk)
-    log.info("Online orders: %d match(es) found for item %s", online_total, item_number)
+    _lock = threading.Lock()
+    _counter = [0]
 
-    # --- In-warehouse receipts ---
-    log.info("Searching warehouse receipts…")
-    receipt_total = 0
-    online_chunks_count = len(date_chunks)
-    for idx, (start, end) in enumerate(date_chunks):
-        chunk = _fetch_receipts(
-            client, item_number, start, end,
-            on_progress=on_progress,
-            progress_current=online_chunks_count + idx,
-            progress_total=total,
-        )
-        receipt_total += len(chunk)
-        results.extend(chunk)
-    log.info("Warehouse receipts: %d match(es) found for item %s", receipt_total, item_number)
+    def _progress(message: str):
+        with _lock:
+            _counter[0] += 1
+            if on_progress:
+                on_progress(_counter[0], total_tasks, message)
+
+    def _fetch_online_chunk(start, end):
+        c = _make_client(token, config) if token and config else client
+        records = _fetch_online_orders(c, item_number, warehouse_number, start, end)
+        _progress(f"Online orders {_fmt_date_online(start)} – {_fmt_date_online(end)}")
+        return records
+
+    def _fetch_receipt_chunk(start, end):
+        c = _make_client(token, config) if token and config else client
+        records = _fetch_receipts(c, item_number, start, end)
+        _progress(f"Receipts {_fmt_date_receipt(start)} – {_fmt_date_receipt(end)}")
+        return records
+
+    max_workers = min(total_tasks, 5)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        for start, end in date_chunks:
+            futures.append(executor.submit(_fetch_online_chunk, start, end))
+            futures.append(executor.submit(_fetch_receipt_chunk, start, end))
+        for future in as_completed(futures):
+            try:
+                results.extend(future.result())
+            except Exception as exc:
+                log.warning("Chunk fetch failed: %s", exc)
 
     results.sort(key=lambda r: r.get("date", ""), reverse=True)
     log.info("Total results for item %s: %d", item_number, len(results))
@@ -240,6 +253,8 @@ def find_orders_by_description(
     warehouse_number: str,
     search_years: int = DEFAULT_SEARCH_YEARS,
     on_progress=None,
+    token: str = "",
+    config: dict = None,
 ) -> list[dict]:
     """
     Search both online orders and in-warehouse receipts for items whose
@@ -247,56 +262,82 @@ def find_orders_by_description(
     Returns a combined, date-sorted list of order records.
 
     Progress tracking uses a two-phase total:
-      Phase 1: len(chunks) * 2  (online chunks + receipt summary chunks)
+      Phase 1: len(chunks) * 2  (online chunks + receipt summary chunks, run in parallel)
       Phase 2: adds len(all_receipts) to the total after summaries are fetched
+
+    token/config: when provided, each worker thread creates its own GraphQLClient
+    (thread-safe). Falls back to the shared client when omitted.
     """
     results: list[dict] = []
     date_chunks = _build_date_chunks(search_years)
     needle = _normalize(description_query)
 
-    # Phase 1 total: online chunks + receipt summary chunks
-    phase1_total = len(date_chunks) * 2
-    current = 0
-
     log.info("Description search %r over %d year(s) in %d date chunks",
              description_query, search_years, len(date_chunks))
 
-    # --- Online orders (filter by description) ---
-    log.info("Searching online orders by description…")
-    for start, end in date_chunks:
-        chunk = _fetch_online_orders_by_description(
-            client, needle, warehouse_number, start, end,
-        )
-        results.extend(chunk)
-        current += 1
-        if on_progress:
-            on_progress(current, phase1_total, f"Online orders {_fmt_date_online(start)} – {_fmt_date_online(end)}")
+    phase1_tasks = len(date_chunks) * 2
+    _lock = threading.Lock()
+    _counter = [0]
 
-    # --- Warehouse receipts: sub-phase 2a — collect all receipt summaries ---
-    log.info("Fetching receipt summaries…")
+    def _progress(current_total: int, message: str):
+        with _lock:
+            _counter[0] += 1
+            if on_progress:
+                on_progress(_counter[0], current_total, message)
+
+    def _online_desc_chunk(start, end):
+        c = _make_client(token, config) if token and config else client
+        records = _fetch_online_orders_by_description(c, needle, warehouse_number, start, end)
+        _progress(phase1_tasks, f"Online orders {_fmt_date_online(start)} – {_fmt_date_online(end)}")
+        return ("online", records)
+
+    def _summary_chunk(start, end):
+        c = _make_client(token, config) if token and config else client
+        summaries = _fetch_receipt_summaries(c, start, end)
+        _progress(phase1_tasks, f"Receipt summaries {_fmt_date_receipt(start)} – {_fmt_date_receipt(end)}")
+        return ("summary", summaries)
+
+    # Phase 1: online description chunks + receipt summary chunks in parallel
     all_receipt_summaries: list[dict] = []
-    for start, end in date_chunks:
-        summaries = _fetch_receipt_summaries(client, start, end)
-        all_receipt_summaries.extend(summaries)
-        current += 1
-        if on_progress:
-            on_progress(current, phase1_total, f"Receipt summaries {_fmt_date_receipt(start)} – {_fmt_date_receipt(end)}")
+    max_workers_p1 = min(phase1_tasks, 5)
+    with ThreadPoolExecutor(max_workers=max_workers_p1) as executor:
+        futures = []
+        for start, end in date_chunks:
+            futures.append(executor.submit(_online_desc_chunk, start, end))
+            futures.append(executor.submit(_summary_chunk, start, end))
+        for future in as_completed(futures):
+            try:
+                kind, data = future.result()
+                if kind == "online":
+                    results.extend(data)
+                else:
+                    all_receipt_summaries.extend(data)
+            except Exception as exc:
+                log.warning("Phase 1 chunk failed: %s", exc)
 
-    log.info("Receipt summaries collected: %d total", len(all_receipt_summaries))
+    log.info("Phase 1 complete: %d online results, %d receipt summaries",
+             len(results), len(all_receipt_summaries))
 
-    # Phase 2: extend total by number of individual receipts to detail-fetch
-    phase2_total = phase1_total + len(all_receipt_summaries)
+    # Phase 2: fetch receipt details in parallel
+    phase2_total = phase1_tasks + len(all_receipt_summaries)
 
-    # Sub-phase 2b — fetch detail for each receipt, filter by description
-    log.info("Fetching receipt details and filtering by description…")
-    for receipt_summary in all_receipt_summaries:
-        record = _fetch_receipt_detail_by_description(client, receipt_summary, needle)
-        if record is not None:
-            results.append(record)
-        current += 1
-        if on_progress:
-            barcode = receipt_summary.get("transactionBarcode", "?")
-            on_progress(current, phase2_total, f"Receipt detail {barcode}")
+    def _detail_fetch(receipt_summary):
+        c = _make_client(token, config) if token and config else client
+        record = _fetch_receipt_detail_by_description(c, receipt_summary, needle)
+        barcode = receipt_summary.get("transactionBarcode", "?")
+        _progress(phase2_total, f"Receipt detail {barcode}")
+        return record
+
+    max_workers_p2 = min(len(all_receipt_summaries), 8) if all_receipt_summaries else 1
+    with ThreadPoolExecutor(max_workers=max_workers_p2) as executor:
+        futures = [executor.submit(_detail_fetch, s) for s in all_receipt_summaries]
+        for future in as_completed(futures):
+            try:
+                record = future.result()
+                if record is not None:
+                    results.append(record)
+            except Exception as exc:
+                log.warning("Receipt detail fetch failed: %s", exc)
 
     results.sort(key=lambda r: r.get("date", ""), reverse=True)
     log.info("Total description search results for %r: %d", description_query, len(results))
@@ -313,9 +354,6 @@ def _fetch_online_orders(
     warehouse_number: str,
     start: date,
     end: date,
-    on_progress=None,
-    progress_current: int = 0,
-    progress_total: int = 0,
 ) -> list[dict]:
     page = 1
     page_size = 50
@@ -360,12 +398,6 @@ def _fetch_online_orders(
             break
         page += 1
 
-    if on_progress and progress_total > 0:
-        on_progress(
-            progress_current + 1,
-            progress_total,
-            f"Online orders {_fmt_date_online(start)} – {_fmt_date_online(end)}",
-        )
     return records
 
 
@@ -451,9 +483,6 @@ def _fetch_receipts(
     item_number: str,
     start: date,
     end: date,
-    on_progress=None,
-    progress_current: int = 0,
-    progress_total: int = 0,
 ) -> list[dict]:
     variables = {
         "startDate": _fmt_date_receipt(start),
@@ -468,9 +497,6 @@ def _fetch_receipts(
         data = client.execute(RECEIPTS_WITH_COUNTS_QUERY, variables)
     except RuntimeError as exc:
         log.warning("receiptsWithCounts failed for %s–%s: %s", start, end, exc)
-        if on_progress and progress_total > 0:
-            on_progress(progress_current + 1, progress_total,
-                        f"Receipts {_fmt_date_receipt(start)} – {_fmt_date_receipt(end)}")
         return records
 
     result = _dig(data, "data", "receiptsWithCounts") or {}
@@ -507,12 +533,6 @@ def _fetch_receipts(
                   record["order_id"], record["date"], record["warehouse"])
         records.append(record)
 
-    if on_progress and progress_total > 0:
-        on_progress(
-            progress_current + 1,
-            progress_total,
-            f"Receipts {_fmt_date_receipt(start)} – {_fmt_date_receipt(end)}",
-        )
     return records
 
 
@@ -607,6 +627,16 @@ def _fetch_receipt_detail_by_description(
     }
     log.debug("Desc receipt match: barcode=%s item=%s", barcode, matched_item_number)
     return record
+
+
+# ---------------------------------------------------------------------------
+# Thread helpers
+# ---------------------------------------------------------------------------
+
+def _make_client(token: str, config: dict) -> GraphQLClient:
+    """Create a fresh GraphQLClient with its own requests.Session (thread-safe)."""
+    import requests
+    return GraphQLClient(requests.Session(), config, token)
 
 
 # ---------------------------------------------------------------------------

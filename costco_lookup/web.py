@@ -113,12 +113,16 @@ def create_app() -> Flask:
                     warehouse_number = config.get("warehouse_number", "")
                     if item:
                         results = find_orders_by_item(
-                            client, item, warehouse_number, years, on_progress=on_progress
+                            client, item, warehouse_number, years,
+                            on_progress=on_progress,
+                            token=token, config=config,
                         )
                         search_meta = {"type": "item", "query": item}
                     else:
                         results = find_orders_by_description(
-                            client, description, warehouse_number, years, on_progress=on_progress
+                            client, description, warehouse_number, years,
+                            on_progress=on_progress,
+                            token=token, config=config,
                         )
                         search_meta = {"type": "description", "query": description}
                     with _cache_lock:

@@ -80,6 +80,8 @@ def cmd_lookup(item_number: str, output_format: str, search_years: int, debug: b
                 warehouse_number=config["warehouse_number"],
                 search_years=search_years,
                 on_progress=on_progress,
+                token=token,
+                config=config,
             )
     except Exception as exc:
         log.exception("Order lookup failed")
@@ -157,6 +159,8 @@ def cmd_lookup_by_description(
                 warehouse_number=config["warehouse_number"],
                 search_years=search_years,
                 on_progress=on_progress,
+                token=token,
+                config=config,
             )
     except Exception as exc:
         log.exception("Description lookup failed")
