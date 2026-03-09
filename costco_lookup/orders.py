@@ -570,7 +570,7 @@ def _fetch_receipt_detail_by_description(
     matched_item_number = None
     for item in item_array:
         full_desc = (
-            item.get("itemDescription01", "") + " " + item.get("itemDescription02", "")
+            (item.get("itemDescription01") or "") + " " + (item.get("itemDescription02") or "")
         ).strip().lower()
         if needle in full_desc:
             matched_item = item
@@ -592,8 +592,8 @@ def _fetch_receipt_detail_by_description(
         "date":          _fmt_display_date(receipt.get("transactionDateTime", "")),
         "item_number":   matched_item_number,
         "description":   (
-            matched_item.get("itemDescription01", "") + " " +
-            matched_item.get("itemDescription02", "")
+            (matched_item.get("itemDescription01") or "") + " " +
+            (matched_item.get("itemDescription02") or "")
         ).strip() or "Warehouse purchase",
         "status":        "Purchased",
         "carrier":       "—",
