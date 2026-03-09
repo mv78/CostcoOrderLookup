@@ -547,12 +547,11 @@ def _fetch_receipt_detail_by_description(
     Fetch full receipt detail for a summary record, filter itemArray by description
     needle. Returns a normalized record dict if any item matches, else None.
     """
-    barcode = receipt_summary.get("transactionBarcode", "")
-    doc_type = receipt_summary.get("documentType", "inWarehouse")
+    barcode = str(receipt_summary.get("transactionBarcode") or "").strip()
     if not barcode:
         return None
 
-    variables = {"barcode": str(barcode), "documentType": doc_type}
+    variables = {"barcode": barcode, "documentType": "warehouse"}
     log.debug("RECEIPT_DETAIL_QUERY barcode=%s", barcode)
     try:
         data = client.execute(RECEIPT_DETAIL_QUERY, variables)
